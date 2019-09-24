@@ -1,16 +1,18 @@
 
 
-### JSON的一些注解
+## JSON的一些注解
 
 1. `@Jsonproperties`的作用是给属性起一个别名，如果使用了这个注解那前端传回来的参数必须使用这个别名传回来。
 2. `@Jsonignore`在传值的时候自动忽略加上这个注解的属性，传回来为空。
 3. `@JsonPropertyOrder`改变传值到前端的值的顺序。
 
+## @ConditionalOnMissBean的作用
+
+如果没有提供容器的话，Spring Boot会自动使用预设容器来实现功能。
 
 
 
-
-### @Responsebody和@RestController的作用
+## @Responsebody和@RestController的作用
 
 对`json`格式的数据的响应。
 
@@ -21,7 +23,7 @@
 
 
 
-### @HttpMessageConverter的作用：
+## @HttpMessageConverter的作用：
 
 1. 将服务器端返回的对象序列化成`Json`格式的数据
 2. 将前端返回的`Json`数据反序列成JAVA对象
@@ -32,7 +34,7 @@ SpringMVC自动配置了`Jackson`和`Gson`的`HttpMessageConverter`，springboot
 
 
 
-### SpringBoot文件上传
+## SpringBoot文件上传
 
 源码在`CommonsMultipartResolver.class`下的`MultipartResolver`，按`Ctrl+H`可以查看实现类，会发现有两个实现类：
 
@@ -96,15 +98,15 @@ public class UploadController {
 }
 ```
 
-### 多文件上传
+## 多文件上传
 
 使用`MultipartFile`数组，使用循环接用单文件上传的方法。
 
 
 
-### @ControllerAdvice的相关知识
+## @ControllerAdvice的相关知识
 
-##### 处理全局异常
+### 处理全局异常
 
 + 在类中的方法上加上一个`@ExceptionHandler(xxx.class)`，xxx指定异常的类型，比如上传文件大小超过最大值的异常，表示：**只有超过文件大小的异常**才会调用此方法来处理异常，其他的异常**不会**进来。
 
@@ -151,7 +153,7 @@ public class MyError {
     }
 ```
 
-##### 预设全局数据
+### 预设全局数据
 
 就是在该类中的方法上加上`@ModelAttribute(value = "xxx")`，xxx为想要的全局数据名称，然后所有的**Controller都可以访问到这个全局数据**，下面是java代码：
 
@@ -180,9 +182,9 @@ public class TestController{
 }
 ```
 
-##### 请求参数预处理
+### 请求参数预处理
 
-###### 问题的产生
+#### 问题的产生
 
 后台从前台获取参数的时候，可能多个对象的参数名称一致，比如现在有两个实体类：
 
@@ -226,5 +228,59 @@ public class TestController{
 解决的办法就是：
 
 1. 在上述getInfo方法的参数分别对应加上@ModelAttribute("value"),value随便指定的字符串
-
 2. 在`@ControllerAdvice`类中定义一个方法，参数需要`WebDataBinder binder`，方法上面加上`@InitBinder("value")`，然后在方法体中写`binder.setFieldDefaultPrefix("value.");`
+
+
+
+## 自定义错误页面
+
+1. 如果页面报错的话，在`static`或者`Template`下建立`error`文件夹，在里面放对应的错误号的html，比如`404.html、500.html`如果出现了对应的错误号的话，会自动转向对应的页面。
+2. 如果同系的错误号太多了，可以使用模糊的错误号页面：`4xx.html`、`5xx.html`
+3. 优先级关系：如果有精确的错误号页面，就会优先访问精确的页面，没有精确的才访问模糊的，无论精确的在哪个文件夹下，都会先访问精确的；先访问`template`下的再访问`static`下的。
+
+
+
+## 自定义错误数据以及自定义错误视图
+
+继承`DefaultErrorAttributes`的原因就是，这个类已经收集好了错误信息，只需要自己再添加错误信息就可以了。下面的是自定义错误数据的，但是只会自动寻找到`error`文件夹下的错误号的内容，**不让转到自定义的错误页面**。
+
+```java
+@Component
+public class MyErrorAttribute extends DefaultErrorAttributes {
+    @Override
+    public Map<String, Object> getErrorAttributes(WebRequest webRequest, boolean includeStackTrace) {
+        Map<String, Object> map = super.getErrorAttributes(webRequest, includeStackTrace);
+        map.put("myerror", "这是我自定义的异常信息！");
+        return map;
+    }
+}
+```
+
+下面的代码就是自定义了错误页面，并且出错可以转到错误页面：参数中`Map<String, Object> model`，model是上面的map，这个model不推荐也不可以改变。
+
+```java
+@Component
+public class MyErrorViewResolver extends DefaultErrorViewResolver {
+
+    public MyErrorViewResolver(ApplicationContext applicationContext, ResourceProperties resourceProperties) {
+        super(applicationContext, resourceProperties);
+    }
+
+    @Override
+    public ModelAndView resolveErrorView(HttpServletRequest request, HttpStatus status, Map<String, Object> model) {
+        ModelAndView mv = new ModelAndView();
+        mv.setViewName("javaboy");
+        mv.addAllObjects(model);
+        return mv;
+    }
+}
+```
+
+
+
+## 通过 CORS 实现跨域
+
+### 什么是跨域？
+
+所谓的跨域就是**当一个请求url的协议、域名、端口三者之间任意一个与当前页面url不同即为跨域**
+
