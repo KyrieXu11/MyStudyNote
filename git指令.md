@@ -25,3 +25,9 @@
     3. git add .
     4. git commit -m "xxx"
     5. git push -u origin master
+16. 创建新分支：`git branch xxx`
+17. 切换分支：`git checkout xxx`
+18. 创建分支并且切换：`git checkout -b xxx`，就是上面两个指令的合体
+19. 合并分支到当前分支：`git merge xxx`
+20. 删除指定分支：`git branch -d xxx`
+21. 查看分支：`git branch`
