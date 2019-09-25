@@ -284,3 +284,33 @@ public class MyErrorViewResolver extends DefaultErrorViewResolver {
 
 所谓的跨域就是**当一个请求url的协议、域名、端口三者之间任意一个与当前页面url不同即为跨域**
 
+
+
+
+
+
+
+
+
+## Spring boot 整合 JPA
+
+### 1.添加依赖
+
+```xml
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+            <version>2.1.8.RELEASE</version>
+        </dependency>
+```
+
+### 2.配置properties
+
+```properties
+spring.jpa.database=mysql
+spring.jpa.database-platform=mysql
+# 每次启动的时候对表的操作是更新，如果有表就更新，如果没有就创建
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.MySQL57Dialect
+```
+
