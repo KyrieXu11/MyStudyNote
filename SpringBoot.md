@@ -21,6 +21,14 @@
    * 作为控制器注入到Spring上下文环境。
    * 请求响应为数据序列化（默认序列化方式是JSON），而不是跳转到html或模板页面。
 
+@Responsbody是用于方法上的，而@RestController是用于类上的。
+
+
+
+## @RequestBody
+
+用于接收前端给后端发来的JSON字符串
+
 
 
 ## @HttpMessageConverter的作用：
@@ -311,6 +319,572 @@ spring.jpa.database=mysql
 spring.jpa.database-platform=mysql
 # 每次启动的时候对表的操作是更新，如果有表就更新，如果没有就创建
 spring.jpa.hibernate.ddl-auto=update
+# 设置方言
 spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.MySQL57Dialect
+```
+
+### 3.编写实体类
+
+```java
+// book.java
+package com.sys.selectcource.enities;
+
+import lombok.Data;
+
+import javax.persistence.Entity;
+import javax.persistence.GeneratedValue;
+import javax.persistence.GenerationType;
+import javax.persistence.Id;
+
+@Data
+@Entity(name = "book")
+public class Book {
+//    设置主键，并且自增
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Integer bookid;    
+    private String name;
+}
+```
+
+注意的是：
+
+1. 实体类前面必须加上`@Entity`注解，并且标注表的名称
+
+2. 必须设置主键，即在主属性上方加上`@Id`注解，`@GeneratedValue(strategy = GenerationType.IDENTITY)`表示自增。
+
+**多个主键的待定**
+
+### 4.编写DAO
+
+```java
+package com.sys.selectcource.Dao;
+
+import com.sys.selectcource.enities.Book;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+//  第一个泛型是操作的实体，第二个是主键的类型
+
+public interface BookDAO extends JpaRepository<Book,Integer> {
+}
+```
+
+无需实现什么方法，就可以创建一个对应的表了。
+
+#### 单元测试
+
+```java
+package com.sys.selectcource;
+
+import com.sys.selectcource.Dao.BookDAO;
+import com.sys.selectcource.enities.Book;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.junit4.SpringRunner;
+
+@RunWith(SpringRunner.class)
+@SpringBootTest
+public class SelectcourceApplicationTests {
+
+    @Autowired
+    BookDAO bookDAO;
+
+    @Test
+    public void contextLoads() {
+        Book book=new Book();
+        book.setName("三国演义");
+        bookDAO.save(book);
+    }
+    // 这里的运行结果是在表中添加一个元素
+
+    @Test
+    public void contextLoads1() {
+        Book book=new Book();
+        book.setName("西游记");
+        bookDAO.saveAndFlush(book);
+    }
+    // 这个可以更新一条数据(但是这里没有，这里还是在后面添加了一条数据)，如果要实现的话就添加一行
+    // book.setBookId()括号内填想要修改的属性的ID
+}
+```
+
+### 5.关键字查询方法
+
+在上面写的`BookDAO`中添加方法，当然方法需要满足命名规则JPA才会实现自定义方法，下面是命名的方法实例。
+
+![图片](http://www.javaboy.org/images/sb/19-5.png)
+
+需要注意的是如果方法对应的SQL语句有多个参数的时候，参数顺序不能颠倒。
+
+### 6.自定义查询
+
+还是在`BookDAO`中写方法，自定义的方法，然后在上面加上`@Query()`括号里面就是SQL语句，如果想使用原生的SQL，必须在括号加上一个参数`nativeQery=true`
+
+### 7.自定义数据修改
+
+```java
+//	下面这个方法的参数一定不能反
+@Query("insert into book(name,author) value(?1,?2)",nativeQuery=true)
+//	因为是修改操作所以必须加入@Modifying
+@Modifying
+//	JPA必须加一个@Transactional才能运行(Update/insert和Delete的时候)
+@Transactional
+Integer addbook(String name,String author);
+
+//	下面这个Param和MyBatis的Param不一样，导入的包不一样
+@Query("insert into book(name,author) value(:name,:author)",nativeQuery=true)
+@Modifying
+@Transactional
+Integer AddBook(@Param("name") String name,@Param("author") String author);
+```
+
+## 使用JPA搭建RESTful服务
+
+### 1.添加RESTful依赖
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+	<artifactId>spring-boot-starter-data-rest</artifactId>
+</dependency>
+```
+
+### 2.创建实体类
+
+
+
+```java
+package com.example.jparestful.Bean;
+
+import lombok.Data;
+
+import javax.persistence.Entity;
+import javax.persistence.GeneratedValue;
+import javax.persistence.GenerationType;
+import javax.persistence.Id;
+
+@Data
+@Entity(name = "book")
+public class Book {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    Integer bookid;
+    String author;
+}
+```
+
+### 3.创建接口
+
+```java
+package com.example.jparestful.DAO;
+
+import com.example.jparestful.Bean.Book;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface Bookdao extends JpaRepository<Book,Integer> {
+}
+```
+
+### 4.使用postman测试
+
+地址的url是
+
+```
+localhost:8080/books
+```
+
+后面的那个是实体类的小写后面加上s，使用**GET**请求就可以看见所有数据库中的信息了。
+
+```json
+{
+  "_embedded": {
+    "books": [
+      {
+        "author": "1",
+        "_links": {
+          "self": {
+            "href": "http://localhost:8080/books/1"
+          },
+          "book": {
+            "href": "http://localhost:8080/books/1"
+          }
+        }
+      },
+      {
+        "author": "2",
+        "_links": {
+          "self": {
+            "href": "http://localhost:8080/books/2"
+          },
+          "book": {
+            "href": "http://localhost:8080/books/2"
+          }
+        }
+      },
+      {
+        "author": "3",
+        "_links": {
+          "self": {
+            "href": "http://localhost:8080/books/3"
+          },
+          "book": {
+            "href": "http://localhost:8080/books/3"
+          }
+        }
+      },
+      {
+        "author": "4",
+        "_links": {
+          "self": {
+            "href": "http://localhost:8080/books/4"
+          },
+          "book": {
+            "href": "http://localhost:8080/books/4"
+          }
+        }
+      },
+      {
+        "author": "5",
+        "_links": {
+          "self": {
+            "href": "http://localhost:8080/books/5"
+          },
+          "book": {
+            "href": "http://localhost:8080/books/5"
+          }
+        }
+      },
+      {
+        "author": "6",
+        "_links": {
+          "self": {
+            "href": "http://localhost:8080/books/6"
+          },
+          "book": {
+            "href": "http://localhost:8080/books/6"
+          }
+        }
+      },
+      {
+        "author": "7",
+        "_links": {
+          "self": {
+            "href": "http://localhost:8080/books/7"
+          },
+          "book": {
+            "href": "http://localhost:8080/books/7"
+          }
+        }
+      },
+      {
+        "author": null,
+        "_links": {
+          "self": {
+            "href": "http://localhost:8080/books/8"
+          },
+          "book": {
+            "href": "http://localhost:8080/books/8"
+          }
+        }
+      }
+    ]
+  },
+  "_links": {
+    "self": {
+      "href": "http://localhost:8080/books{?page,size,sort}",
+      "templated": true
+    },
+    "profile": {
+      "href": "http://localhost:8080/profile/books"
+    }
+  },
+  "page": {
+    "size": 20,
+    "totalElements": 8,
+    "totalPages": 1,
+    "number": 0
+  }
+}
+```
+
+从上面可以看到很多信息，比如分页，比如作者等等。
+
+### 5.添加基础访问地址
+
+```properties
+spring.data.rest.base-path=/kyriexu
+```
+
+这样访问的url就应该是
+
+```
+localhost:8080/kyriexu/books
+```
+
+### 6.添加自定义REST服务
+
+在DAO类中的方法自定义一个方法:
+
+```java
+Book findBookByBookid(@Param("id") Integer id);
+```
+
+然后可以在POSTMAN中发出一个请求，请求地址是
+
+```
+http://localhost:8080/books/search
+```
+
+返回的是接口的方法名称和用法，上述例子返回的是:
+
+```json
+{
+  "_links": {
+    "findBookByBookid": {
+      "href": "http://localhost:8080/books/search/findBookByBookid{?id}",
+      "templated": true
+    },
+    "self": {
+      "href": "http://localhost:8080/books/search"
+    }
+  }
+```
+
+### 7.隐藏接口
+
+修改上面DAO类中的代码
+
+```java
+@RestResource(path = "byid",rel = "fbi")
+Book findBookByBookid(@Param("id") Integer id);
+```
+
+然后发送search，返回的是
+
+```json
+{
+  "_links": {
+    "fbi": {
+      "href": "http://localhost:8080/books/search/byid{?id}",
+      "templated": true
+    },
+    "self": {
+      "href": "http://localhost:8080/books/search"
+    }
+  }
+}
+```
+
+在**类上面**加上**@RepositoryRestSource**的注解之后，修改的是返回所有的数据的路径和集合
+
+如果是`@RepositoryRestResource(path = "bks",collectionResourceRel = "bks")`，访问的url就是
+
+```
+http://localhost:8080/bks
+```
+
+返回的是
+
+![Snipaste_2019-09-29_11-01-54.png](https://i.loli.net/2019/09/29/nESmGYsKrQD3xBW.png)
+
+## @Resource和@Autowired的区别
+
+### 1.纸面上说说区别
+
+**@Resource**是按名称注入的，而**@Autowired**是按类型注入的，如果想要实现按名称注入就必须和**@Qualifier**一起使用。
+
+### 2.举个小栗子
+
+如果一个DAO接口有多个实现类，如果仅仅只是使用**@Autowired**，那么该自动注入哪个实现类呢？
+
+```java
+//	实体类
+package com.example.demo.bean;
+
+import lombok.Data;
+
+@Data
+public class book {
+    private Integer id;
+    private String name;
+}
+```
+
+```java
+//	dao 接口
+package com.example.demo.dao;
+
+import com.example.demo.bean.book;
+
+public interface bookdao {
+    public String getinfo(book b);
+}
+```
+
+```java
+//	第一个实现Dao接口的实现类
+package com.example.demo.dao.impl;
+
+import com.example.demo.bean.book;
+import com.example.demo.dao.bookdao;
+import org.springframework.stereotype.Component;
+
+//	注意使用了@Componenet指定名称
+@Component("bookdaoImpl")
+public class bookdaoImpl implements bookdao {
+    @Override
+    public String getinfo(book b) {
+        return b.toString();
+    }
+}
+```
+
+```java
+//	第二个实现类
+package com.example.demo.dao.impl;
+
+import com.example.demo.bean.book;
+import com.example.demo.dao.bookdao;
+import org.springframework.stereotype.Component;
+
+@Component("bookdaoImpl1")
+public class bookdaoImpl1 implements bookdao {
+    @Override
+    public String getinfo(book b) {
+        return "1";
+    }
+}
+```
+
+上方两个实现类都使用了**@Component**注解来指定名称，在单元测试中查看效果
+
+```java
+package com.example.demo;
+
+import com.example.demo.bean.book;
+import com.example.demo.dao.bookdao;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.junit4.SpringRunner;
+
+@RunWith(SpringRunner.class)
+@SpringBootTest
+public class DemoApplicationTests {
+    @Autowired
+    @Qualifier("bookdaoImpl")
+    bookdao bkd;
+
+    @Test
+    public void contextLoads() {
+        book b=new book();
+        b.setId(1);
+        b.setName("wocao");
+        System.out.println(bkd.getinfo(b));
+    }
+}
+```
+
+这个的输出结果就是book的全部信息了，如果是`@Qualifier("bookdaoImpl1")`的话，那就是输出1了。
+
+## SpringSecurity使用
+
+### 1.导入依赖
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-security</artifactId>
+</dependency>
+```
+
+### 2.直接使用不自定义配置出现的结果
+
+现在随便写一个接口
+
+```java
+package com.example.springsecurity.Controller;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.ArrayList;
+import java.util.List;
+
+@RestController
+public class HelloController {
+
+    @GetMapping("/hello")
+    public List<String> hello(){
+        List<String> list=new ArrayList<>();
+        list.add("hello");
+        return list;
+    }
+}
+```
+
+运行后直接在浏览器中输入`localhost:8080/hello`，出现的结果：
+
+![springsecurity.png](https://i.loli.net/2019/10/01/HaJv9rB5yEpXhTG.png)
+
+登陆的用户名默认是：`user`，而密码是在控制台中随机生成的，每次项目启动都会自动生成：
+
+![springsecurity_password.png](https://i.loli.net/2019/10/01/Ni2bxqSIek4ClKc.png)
+
+这样登陆进去就会看到想要的结果了。
+
+### 3.自定义用户名密码
+
+有两种方式自定义用户名和密码：
+
+#### 1.在配置文件中配置
+
+```properties
+spring.security.user.name=xq
+spring.security.user.password=wdnmd
+spring.security.user.roles=admin
+```
+
+#### 2.配置类中配置
+
+```java
+package com.example.springsecurity.Config;
+
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+
+@Configuration
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+    protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+    	auth.inMemoryAuthentication()
+            .withUser("xq")
+            .password("wtf")
+            .roles("admin")
+            .and()
+            .withUser("kyriexu")
+            .password("wdnmd")
+            .roles("user");
+	}	
+}
+```
+
+### 4.通过对应的路径拦截
+
+在上述配置类的基础上添加一个重写的方法：
+
+```java
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http.authorizeRequests()
+//                在admin路径下的任意地址，只能admin权限的才能登陆
+                .antMatchers("/admin/**").hasRole("admin")
+//                user路径下的所有地址，在User和admin中任选一个都可登陆
+                .antMatchers("/user/**").hasAnyRole("admin","user");
+    }
 ```
 
