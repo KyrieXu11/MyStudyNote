@@ -860,6 +860,10 @@ import org.springframework.security.config.annotation.web.configuration.WebSecur
 
 @Configuration
 public class SecurityConfig extends WebSecurityConfigurerAdapter {
+    @Bean
+    PasswordEncoder passwordEncoder(){
+        return NoOpPasswordEncoder.getInstance();
+    }
     protected void configure(AuthenticationManagerBuilder auth) throws Exception {
     	auth.inMemoryAuthentication()
             .withUser("xq")
@@ -888,3 +892,580 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
     }
 ```
 
+### 5.使用Postman来测试接口
+
+在`4`中的代码增加下面的代码：
+
+```java
+				.anyRequest().authenticated()
+                .and()
+                .formLogin()
+                .loginProcessingUrl("/dologin")
+                .permitAll()
+                .and()
+                .csrf().disable();
+```
+
+其中需要最后一行的代码，将`csrf`对系统的攻击取消，因为postman测试接口的话，就相当于注入这个攻击，上述代码测试接口的过程是下述过程。
+
+![get_8080_hello.png](https://i.loli.net/2019/10/02/CqbPve6w8NGkcEn.png)
+
+然后再访问下面的请求，注意是POST请求
+![dologin_username_password.png](https://i.loli.net/2019/10/02/B1Et5J2Ye6KLGUg.png)
+
+### 6.完善表单登陆
+
+```java
+				.loginPage("/login")
+                .usernameParameter("usr")
+                .passwordParameter("pswd")
+                .successHandler(new AuthenticationSuccessHandler() {
+                    @Override
+                    public void onAuthenticationSuccess(HttpServletRequest req, HttpServletResponse rep, Authentication authentication) throws IOException, ServletException {
+                        rep.setContentType("application/json;charset=utf-8");
+                        PrintWriter writer = rep.getWriter();
+                        Map<String,Object> mp=new HashMap<>();
+                        mp.put("status",200);
+                        mp.put("msg",authentication.getPrincipal());
+                        writer.write(new ObjectMapper().writeValueAsString(mp));
+                        writer.flush();
+                        writer.close();
+                    }
+                })
+                .failureHandler(new AuthenticationFailureHandler() {
+                    @Override
+                    public void onAuthenticationFailure(HttpServletRequest req, HttpServletResponse rep, AuthenticationException e) throws IOException, ServletException {
+
+                    }
+                })
+```
+
+在`5`中的`loginProcessUrl`后面添加上面的代码
+
+一行一行的解释一下：1.设置登陆的页面	2.设置登陆的参数，即/`dologin?usr=xxx&pswd=xxx` 3.设置登陆成功后跳转的页面，如果是前后端分离的话，就使用这种方法，如果不是前后端分离的话，就使用`.successForwardUrl()`来跳转到登陆成功后的页面。 4.同理`failureHandler`是处理登陆失败的跳转页面，方法和登陆成功的差不多，就是根据异常的类型来提示出错的原因。
+
+登陆成功的返回结果
+
+![login_success.png](https://i.loli.net/2019/10/02/vfoteAnEVxLKBrQ.png)
+
+### 7.注销处理
+
+在上述的基础上添加下面的代码
+
+```java
+				.logout()
+                .logoutUrl("/logout")
+                .logoutSuccessHandler(new LogoutSuccessHandler() {
+                    @Override
+                    public void onLogoutSuccess(HttpServletRequest req, HttpServletResponse rep, Authentication authentication) throws IOException, ServletException {
+                        rep.setContentType("application/json;charset=utf-8");
+                        PrintWriter writer = rep.getWriter();
+                        Map<String,Object> mp=new HashMap<>();
+                        mp.put("status",200);
+                        mp.put("msg","注销成功");
+                        writer.write(new ObjectMapper().writeValueAsString(mp));
+                        writer.flush();
+                        writer.close();
+                    }
+                })
+```
+
+下面是使用Postman测试接口的步骤，首先访问/admin/hello get请求
+
+
+![please_login.png](https://i.loli.net/2019/10/02/nzGMrN7SmDpu3e9.png)
+
+然后再登陆，登陆成功之后，再访问/admin/hello
+
+![hello_admin.png](https://i.loli.net/2019/10/02/bHDFeQEk46Iqx39.png)
+
+注销成功
+
+![logout_success.png](https://i.loli.net/2019/10/02/hKrizayH6epx9UZ.png)
+
+再访问就提示需要登陆了。
+
+### 8.多个HttpSecurity
+
+在一个配置类中定义**多个内部静态配置类**，分别继承**WebSecurityConfigurerAdapter**，重写`configure(httpsecurity)`方法，分别配置，就像单个配置的方法一样，就可以实现多个HttpSecurity的访问。
+
+### 9.密码加密
+
+上面所有的方法都是通过
+
+```java
+	@Bean
+    PasswordEncoder passwordEncoder(){
+        return NoOpPasswordEncoder.getInstance();
+    }
+```
+
+这种方法来告诉服务器不需要加密访问就可以登陆。那怎么通过密码加密来访问页面的呢？
+
+在单元测试中跑下面的代码
+
+```
+BCryptPasswordEncoder bcp = new BCryptPasswordEncoder();
+System.out.println(bcp.encode("wdnmd"));
+```
+
+得到的结果:
+
+![pswd_brc.png](https://i.loli.net/2019/10/02/enVhtYa9ruAmSCH.png)
+
+将上面的密码复制到配置类中替换原来的密码，也可以使用`wdnmd`这个密码来访问页面。
+
+上面的配置类的代码在下面:
+
+```java
+package com.example.springsecurity.Config;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.LockedException;
+import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.authentication.AuthenticationFailureHandler;
+import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
+import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
+
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.HashMap;
+import java.util.Map;
+
+@Configuration
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+
+    @Bean
+    PasswordEncoder passwordEncoder(){
+        return new BCryptPasswordEncoder();
+    }
+
+    @Override
+    protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+        auth.inMemoryAuthentication()
+                .withUser("xq")
+                .password("$2a$10$isoeFEy3LvYU7wzm45dkUOKHRYw445fUw1E5RjBh.Gz5sjXFMBX0u")
+                .roles("admin")
+                .and()
+                .withUser("kyriexu")
+                .password("$2a$10$isoeFEy3LvYU7wzm45dkUOKHRYw445fUw1E5RjBh.Gz5sjXFMBX0u")
+                .roles("user");
+    }
+
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http.authorizeRequests()
+//                在admin路径下的任意地址，只能admin权限的才能登陆
+                .antMatchers("/admin/**").hasRole("admin")
+//                user路径下的所有地址，在User和admin中任选一个都可登陆
+                .antMatchers("/user/**").hasAnyRole("admin","user")
+                .anyRequest().authenticated()
+                .and()
+                .formLogin()
+                .loginProcessingUrl("/dologin")
+                .loginPage("/login")
+                .usernameParameter("usr")
+                .passwordParameter("pswd")
+                .successHandler(new AuthenticationSuccessHandler() {
+                    @Override
+                    public void onAuthenticationSuccess(HttpServletRequest req, HttpServletResponse rep, Authentication authentication) throws IOException, ServletException {
+                        rep.setContentType("application/json;charset=utf-8");
+                        PrintWriter writer = rep.getWriter();
+                        Map<String,Object> mp=new HashMap<>();
+                        mp.put("status",200);
+                        mp.put("msg",authentication.getPrincipal());
+                        writer.write(new ObjectMapper().writeValueAsString(mp));
+                        writer.flush();
+                        writer.close();
+                    }
+                })
+                .failureHandler(new AuthenticationFailureHandler() {
+                    @Override
+                    public void onAuthenticationFailure(HttpServletRequest req, HttpServletResponse rep, AuthenticationException e) throws IOException, ServletException {
+                        rep.setContentType("application/json;charset=utf-8");
+                        PrintWriter writer = rep.getWriter();
+                        Map<String,Object> mp=new HashMap<>();
+                        mp.put("status",401);
+                        if(e instanceof LockedException){
+                            mp.put("msg","帐户被锁定，登录失败");
+                        }else if(e instanceof BadCredentialsException){
+                            mp.put("msg","用户名或密码错误，登录失败");
+                        }else {
+                            mp.put("msg","登陆失败");
+                        }
+                        writer.write(new ObjectMapper().writeValueAsString(mp));
+                        writer.flush();
+                        writer.close();
+                    }
+                })
+                .permitAll()
+                .and()
+                .logout()
+                .logoutUrl("/logout")
+                .logoutSuccessHandler(new LogoutSuccessHandler() {
+                    @Override
+                    public void onLogoutSuccess(HttpServletRequest req, HttpServletResponse rep, Authentication authentication) throws IOException, ServletException {
+                        rep.setContentType("application/json;charset=utf-8");
+                        PrintWriter writer = rep.getWriter();
+                        Map<String,Object> mp=new HashMap<>();
+                        mp.put("status",200);
+                        mp.put("msg","注销成功");
+                        writer.write(new ObjectMapper().writeValueAsString(mp));
+                        writer.flush();
+                        writer.close();
+                    }
+                })
+                .and()
+                .csrf().disable();
+    }
+}
+```
+
+controller的代码在下面：
+
+```java
+package com.example.springsecurity.Controller;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.ArrayList;
+import java.util.List;
+
+@RestController
+public class HelloController {
+
+    @GetMapping("/hello")
+    public List<String> hello(){
+        List<String> list=new ArrayList<>();
+        list.add("hello");
+        return list;
+    }
+
+    @GetMapping("/admin/hello")
+    public String adminHello(){
+        return "hello admin";
+    }
+
+    @GetMapping("/user/hello")
+    public String userHello(){
+        return "hello user";
+    }
+
+    @GetMapping("/login")
+    public String login(){
+        return "please login";
+    }
+}
+```
+
+### 10.方法安全
+
+在上面的配置类中添加一条注解就是
+
+```java
+@EnableGlobalMethodSecurity(prePostEnabled = true,securedEnabled = true)
+```
+
+前面的参数的意思是开启了两个注解：
+
+- `@PreAuthorize()`，在方法执行之前进行校验
+- `@PostAuthorize()`，在方法执行之后进行校验(这个一般很少用)
+
+后面的参数开启了：`@Secured()`注解和`@PreAuthorize()`一样，不过注意书写的问题。示例代码在下方:
+
+```java
+package com.example.springsecurity.Service;
+
+import org.springframework.security.access.annotation.Secured;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.stereotype.Service;
+
+@Service
+public class MethodService {
+
+    @PreAuthorize("hasRole('admin')")
+    public String admin(){
+        return "hello admin";
+    }
+
+    @Secured("ROLE_user")
+    public String user(){
+        return "hello user";
+    }
+
+    @PreAuthorize("hasAnyAuthority('admin','user')")
+    public String hello(){
+        return "hello hello";
+    }
+}
+```
+
+然后在Controller中自动注入，用请求不同的路径，调用service的方法，防止我以后看不懂，写一个小栗子在下面：
+
+```java
+	@Autowired
+    MethodService methodService;
+
+    @GetMapping("/hello1")
+    public String hello1(){
+        return methodService.admin();
+    }
+```
+
+如果我这以后都看不懂，我就~~自杀~~算了。
+
+然后进行测试，登陆`admin`角色，访问`/hello1`会出现`hello admin`，而访问`user()`，则会出现**404**。
+
+### 11.从数据库中读入用户
+
+**这里使用`spring boot 整合 Mybatis`来说明。**
+
+步骤：
+
+#### 1.新建实体类
+
+因为有两张表，`role`和`user`，所以新建两个实体类，值得注意的是，实体的属性和数据库中的表的属性名称**要么相同，要么符合驼峰命名规则**。贴上代码：
+
+```java
+package com.example.springsecuritydb.Enity;
+
+import lombok.Data;
+
+@Data
+public class Role {
+    private Integer id;
+    private String name;
+    private String nameZh;
+}
+```
+
+因为是权限表，所以相对比较简单，下面的用户表比较的蛋疼...
+
+```java
+package com.example.springsecuritydb.Enity;
+
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+
+public class User implements UserDetails {
+    private Integer id;
+    private String username;
+    private String password;
+    private Boolean locked;
+    private Boolean enabled;
+    private List<Role> roles;
+
+    public Integer getId() {
+        return id;
+    }
+
+    public void setId(Integer id) {
+        this.id = id;
+    }
+
+    @Override
+    public String getUsername() {
+        return username;
+    }
+
+    @Override
+    public boolean isAccountNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isAccountNonLocked() {
+        return !locked;
+    }
+
+    @Override
+    public boolean isCredentialsNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        List<SimpleGrantedAuthority> authorities=new ArrayList<>();
+        for (Role role : roles) {
+            authorities.add(new SimpleGrantedAuthority("ROLE_"+role.getName()));
+        }
+        return authorities;
+    }
+
+    @Override
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
+
+    public void setLocked(Boolean locked) {
+        this.locked = locked;
+    }
+
+    public void setEnabled(Boolean enabled) {
+        this.enabled = enabled;
+    }
+
+    public List<Role> getRoles() {
+        return roles;
+    }
+
+    public void setRoles(List<Role> roles) {
+        this.roles = roles;
+    }
+}
+```
+
+要注意的是，这里**绝对不允许使用Lombok插件**，原因是：如果使用了Lombok插件，就会造成了**`getter和setter`**重复载入，编译器报错...那为什么会导致重复载入呢？
+
+在这个实体类中实现了`UserDetails`这个接口，这个接口的方法有7个，分别是：
+
+```java
+package org.springframework.security.core.userdetails;
+
+import java.io.Serializable;
+import java.util.Collection;
+import org.springframework.security.core.GrantedAuthority;
+
+public interface UserDetails extends Serializable {
+    Collection<? extends GrantedAuthority> getAuthorities();
+
+    String getPassword();	
+
+    String getUsername();
+
+    boolean isAccountNonExpired();		//返回帐户是否过期
+
+    boolean isAccountNonLocked();		//查看帐户是否被锁定
+
+    boolean isCredentialsNonExpired();		//用户名密码是否过期
+
+    boolean isEnabled();				//查看帐户是否可用
+}
+```
+
+有**username**和**password**的相关方法(其实就是getter方法)，此时使用**lombok**必然会造成重复载入getter的错误，相关的方法的用途都已经写在上面代码中的注释里面了。
+
+#### 2.新建服务类
+
+有了实体类也会有服务类，这个服务类要继承`UserDetailsService`这个接口，自动通过用户名来加载用户。
+
+```java
+package com.example.springsecuritydb.Service;
+
+import com.example.springsecuritydb.Enity.User;
+import com.example.springsecuritydb.Mapper.UserMapper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.stereotype.Service;
+
+@Service
+public class UserService implements UserDetailsService {
+    @Autowired
+    UserMapper userMapper;
+
+    @Override
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        User user=userMapper.getUserByUsername(username);
+        if(user==null){
+            throw new UsernameNotFoundException("用户不存在");
+        }
+        user.setRoles(userMapper.getRoleByID(user.getId()));
+        return user;
+    }
+}
+```
+
+#### 3.新建持久层
+
+```java
+package com.example.springsecuritydb.Mapper;
+
+import com.example.springsecuritydb.Enity.Role;
+import com.example.springsecuritydb.Enity.User;
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
+
+import java.util.List;
+
+
+@Mapper
+public interface UserMapper {
+    @Select("select * from user where username = #{username}")
+    User getUserByUsername(@Param(value = "username") String username);
+
+    @Select("select * from role where id in (select rid from user_role where uid=#{id})")
+    List<Role> getRoleByID(@Param(value = "id") Integer id);
+}
+```
+
+这个不用多说，就是查询。
+
+#### 4.配置SecurityConfig
+
+```java
+package com.example.springsecuritydb.Config;
+
+import com.example.springsecuritydb.Service.UserService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+@Configuration
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+    @Bean
+    PasswordEncoder passwordEncoder(){
+        return new BCryptPasswordEncoder();
+    }
+
+    @Autowired
+    UserService userService;
+
+    @Override
+    protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+        auth.userDetailsService(userService);
+    }
+}
+```
+
+通过重写`configure`来加载，userService，判断用户的状态(用户名密码和输入密码是否相等 等作用)，数据库存放的密码都是密文存储，加密方式就是通过`BCryptPasswordEncoder`。
+
+当然上面的还没写完，因为还没配置相关权限访问页面的状态。简单的说说，就是重写`configure(HttpSecure)`方法来配置相关的权限访问页面，具体的通过上面的单个`HttpSecure`来配置，这里就不配置了。
