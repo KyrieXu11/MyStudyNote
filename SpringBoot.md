@@ -940,7 +940,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 })
 ```
 
-在`5`中的`loginProcessUrl`后面添加上面的代码
+在`5`中的`loginProcessUrl`后面添加上面的代码，其中**authentication**存放着的是登陆用户信息
 
 一行一行的解释一下：1.设置登陆的页面	2.设置登陆的参数，即/`dologin?usr=xxx&pswd=xxx` 3.设置登陆成功后跳转的页面，如果是前后端分离的话，就使用这种方法，如果不是前后端分离的话，就使用`.successForwardUrl()`来跳转到登陆成功后的页面。 4.同理`failureHandler`是处理登陆失败的跳转页面，方法和登陆成功的差不多，就是根据异常的类型来提示出错的原因。
 
@@ -1469,3 +1469,24 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
 通过重写`configure`来加载，userService，判断用户的状态(用户名密码和输入密码是否相等 等作用)，数据库存放的密码都是密文存储，加密方式就是通过`BCryptPasswordEncoder`。
 
 当然上面的还没写完，因为还没配置相关权限访问页面的状态。简单的说说，就是重写`configure(HttpSecure)`方法来配置相关的权限访问页面，具体的通过上面的单个`HttpSecure`来配置，这里就不配置了。
+
+### 12.角色权限继承
+
+在配置类中添加下面的代码
+
+```java
+@Bean
+RoleHierarchy roleHierarchy() {
+    RoleHierarchyImpl roleHierarchy = new RoleHierarchyImpl();
+    String hierarchy = "ROLE_dba > ROLE_admin \n ROLE_admin > ROLE_user";
+    roleHierarchy.setHierarchy(hierarchy);
+    return roleHierarchy;
+}
+```
+
+### 13.动态配置权限
+
+妈的太多了...明天再说
+
+[这里是源代码的地址，按Ctrl+鼠标左键点我即可访问](https://github.com/KyrieXu11/Some_Code)
+

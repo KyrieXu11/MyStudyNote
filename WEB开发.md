@@ -257,7 +257,94 @@ public interface QuestionMappper {
 
 中间的注释部分是**实体层**的变量。
 
-## 4.LomBok插件使用(这个是真的好用)
+## 4.Mybatis注解进行一对多和多对多查询
+
+### 1.实体类：
+
+```java
+//	Role类
+package com.example.springsecuritydb.Enity;
+
+import lombok.Data;
+
+@Data
+public class Role {
+    private Integer id;
+    private String name;
+    private String nameZh;
+}
+```
+
+
+
+```java
+//	Menu类
+package com.example.springsecuritydb.Enity;
+
+import lombok.Data;
+
+import java.util.List;
+
+@Data
+public class Menu {
+    private Integer id;
+    private String pattern;
+    private List<Role> roles;
+}
+```
+
+### 2.对应的Mapper
+
+```java
+//	RoleMapper
+package com.example.springsecuritydb.Mapper;
+
+import com.example.springsecuritydb.Enity.Role;
+import org.apache.ibatis.annotations.*;
+
+import java.util.List;
+
+@Mapper
+public interface RoleMapper {
+
+    @Results({
+            @Result(property = "name",column = "name"),
+            @Result(property = "nameZh",column = "nameZh")
+    })
+    @Select("select * from role where id= #{id}")
+    List<Role> getById(@Param("id") Integer id);
+}
+```
+
+
+
+```java
+//	MenuMapper
+package com.example.springsecuritydb.Mapper;
+
+import com.example.springsecuritydb.Enity.Menu;
+import org.apache.ibatis.annotations.*;
+
+import java.util.List;
+
+@Mapper
+public interface MenuMapper {
+
+    @Select("select * from menu")
+    @Results({
+            @Result(property = "id",column = "id"),
+            @Result(property = "pattern",column = "pattern"),
+            @Result(property = "roles",column = "id",many = @Many(select ="com.example.springsecuritydb.Mapper.RoleMapper.getById"))
+    })
+    List<Menu> getAllMenus();
+}
+```
+
+### 3.这里就说多对多的问题
+
+所谓的多对多就是，一个实体类中含有另一个表的信息使用`@Many`来调用另一个`Mapper`的查询方法进行连接查询，得到结果，其中`property`是实体类中的属性，`column`是表中对应的列，也是传参所需的参数。
+
+## 5.LomBok插件使用(这个是真的好用)
 
 ### 1.引入Lombok依赖
 
