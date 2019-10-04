@@ -1486,7 +1486,205 @@ RoleHierarchy roleHierarchy() {
 
 ### 13.动态配置权限
 
-妈的太多了...明天再说
-
 [这里是源代码的地址，按Ctrl+鼠标左键点我即可访问](https://github.com/KyrieXu11/Some_Code)
+
+所谓的动态权限配置就是，对应的角色路径都保存在数据库中，因为默认是写死在代码中的，参考上面的`HttpSecurity`.
+
+#### 1.建立对应的表
+
+![database_tables.png](https://i.loli.net/2019/10/04/AuTYW81FpyI24lf.png)
+
+##### 1.1 Menu表
+
+id	pattern
+
+1	/db/**
+2	/admin/**
+3	/user/**
+
+##### 1.2 menu_role
+
+id	mid	rid
+
+1		1	1
+2		2	2
+3		3	3
+
+#### 2.创建对应的实体类
+
+`Role`和`user`表和上面的一样，`user`实体类中需要将`ROLE_+`给去掉，因为数据库中已经加了这个前缀，说说`Menu`表吧，menu不用继承UserDetails接口，但是要添加一个属性
+
+```java
+    private List<Role> roles;
+```
+
+用来存放角色信息，就是查询到角色路径，每个角色路径都对应一个角色，roles就是对应的角色信息。
+
+#### 3.创建持久层
+
+```java
+//	这个是MenuMapper
+package com.example.springsecuritydb.Mapper;
+
+import com.example.springsecuritydb.Enity.Menu;
+import org.apache.ibatis.annotations.*;
+
+import java.util.List;
+
+@Mapper
+public interface MenuMapper {
+
+    @Select("select * from menu")
+    @Results({
+            @Result(property = "id",column = "id"),
+            @Result(property = "pattern",column = "pattern"),
+            @Result(property = "roles",column = "id",many = @Many(select ="com.example.springsecuritydb.Mapper.RoleMapper.getById"))
+    })
+    List<Menu> getAllMenus();
+}
+```
+
+注意里面有一个注解`@Many`，就是调用`select`后面那个路径的方法，参数在`Column`给出了，就是一个简单的连接查询。
+
+---
+
+那么如果是多个参数呢？还有待思考，先占个坑。
+
+所以还是使用XML配置的Mybatis来写比较的不用考虑这么多，关于Mybatis的XML写法，在另一个文件会写。
+
+---
+
+
+
+#### 4.创建服务层
+
+UserService和上面的一样，而MenuService就是调用Mapper中的查询方法，将对应的角色和路径查出来。
+
+#### 5.创建过滤器
+
+过滤器最主要的功能就是：**分析出==请求地址==，根据地址分析需要哪些角色**
+
+实现了**`FilterInvocationSecurityMetadataSource`**这个接口，代码注释中都写得很详细了，就不多说了，主要的是要将最后一个重写的方法设置返回值为**true**
+
+```java
+package com.example.springsecuritydb.Filter;
+
+import com.example.springsecuritydb.Enity.Menu;
+import com.example.springsecuritydb.Enity.Role;
+import com.example.springsecuritydb.Service.MenuService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.ConfigAttribute;
+import org.springframework.security.access.SecurityConfig;
+import org.springframework.security.web.FilterInvocation;
+import org.springframework.security.web.access.intercept.FilterInvocationSecurityMetadataSource;
+import org.springframework.stereotype.Component;
+import org.springframework.util.AntPathMatcher;
+
+import java.util.Collection;
+import java.util.List;
+
+@Component
+public class MyFilter implements FilterInvocationSecurityMetadataSource {
+//    路径匹配的对象
+    AntPathMatcher antPathMatcher=new AntPathMatcher();
+
+    @Autowired
+    MenuService menuService;
+
+//    过滤器的最主要功能是分析出请求地址，根据地址分析需要哪些角色
+    @Override
+    public Collection<ConfigAttribute> getAttributes(Object o) throws IllegalArgumentException {
+//        每次请求都会调用这个方法
+//        获取请求地址，Object对象实际是FilterInvocation对象，集合返回的是所需要的角色
+        String requestUrl = ((FilterInvocation) o).getRequestUrl();
+
+//        可以考虑将Menu存到Redis里面去，因为Menu表基本不变
+        List<Menu> allMenus = menuService.getAllMenus();
+        for (Menu menu : allMenus) {
+//            将pattern和请求地址比较，如果匹配的话就返回对应pattern的角色
+            if(antPathMatcher.match(menu.getPattern(),requestUrl)){
+                List<Role> roles=menu.getRoles();
+                String[] rolestr=new String[roles.size()];
+                for (int i = 0; i < roles.size(); i++) {
+                    rolestr[i]=roles.get(i).getName();
+                }
+                return SecurityConfig.createList(rolestr);
+            }
+        }
+//        如果匹配不上，就返回一个login对象，表示登陆之后就能访问
+//        不是这个返回这个就可以访问了，还要看后续操作处理，实际上这个也就是一个标记
+        return SecurityConfig.createList("ROLE_LOGIN");
+    }
+
+    @Override
+    public Collection<ConfigAttribute> getAllConfigAttributes() {
+        return null;
+    }
+
+//    是否支持这种方式，默认返回false，改成true
+    @Override
+    public boolean supports(Class<?> aClass) {
+        return true;
+    }
+}
+```
+
+#### 6.创建非表中角色处理的类
+
+如果登陆用户是匿名登陆的一个实例的话，就抛出异常，否则就返回不继续执行，要将另外两个重写方法设置返回值为true，表示支持这种方式。
+
+```java
+package com.example.springsecuritydb.Config;
+
+import org.springframework.security.access.AccessDecisionManager;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.ConfigAttribute;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.authentication.InsufficientAuthenticationException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.stereotype.Component;
+
+import java.util.Collection;
+
+//  已经得到了需要哪些角色，将这些角色和已有角色对比
+@Component
+public class MyAcessDecisionManager implements AccessDecisionManager {
+//    第一个参数存放着的是登陆用户的信息，第二个参数就是MyFilter中的Object参数
+//    第三个参数是访问路径需要的权限
+    @Override
+    public void decide(Authentication authentication, Object o, Collection<ConfigAttribute> collection) throws AccessDeniedException, InsufficientAuthenticationException {
+        for (ConfigAttribute Attribute : collection) {
+            if("ROLE_LOGIN".equals(Attribute.getAttribute())){
+                if(authentication instanceof AnonymousAuthenticationToken){
+                    throw new AccessDeniedException("非法请求");
+                }else {
+                    return;
+                }
+            }
+            Collection<? extends GrantedAuthority> authorities = authentication.getAuthorities();
+            for (GrantedAuthority authority : authorities) {
+                if(authority.getAuthority().equals(Attribute.getAttribute())){
+                    return;
+                }
+            }
+        }
+        throw new AccessDeniedException("非法请求");
+    }
+
+    @Override
+    public boolean supports(ConfigAttribute configAttribute) {
+        return true;
+    }
+
+    @Override
+    public boolean supports(Class<?> aClass) {
+        return true;
+    }
+}
+```
+
+#### 7.创建配置类
+
+这个不多说了，就基本上和静态的差不多，代码上传到GitHub上了。
 
