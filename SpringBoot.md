@@ -1688,3 +1688,85 @@ public class MyAcessDecisionManager implements AccessDecisionManager {
 
 这个不多说了，就基本上和静态的差不多，代码上传到GitHub上了。
 
+## SpingBoot整合Redis
+
+### 1.导入依赖
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-redis</artifactId>
+    <version>2.1.8.RELEASE</version>
+</dependency>
+```
+
+### 2.配置`properties`
+
+```properties
+#	端口号一般不会改
+spring.redis.port=6379
+#	虚拟机中的ip地址，使用ifconfig指令查看
+spring.redis.host=192.168.1.106
+#	如果有配置密码的话
+spring.redis.password=123
+#	选择redis的数据库
+spring.redis.database=0
+```
+
+### 3.编写Controller
+
+使用`StringRedisTemplate`
+
+```java
+package com.example.springsecuritydb.Controller;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class RedisController {
+
+    @Autowired
+    StringRedisTemplate redisTemplate;
+
+    @GetMapping("/set")
+    public String setValue(){
+        String a="abc";
+        ValueOperations<String,String> ops=redisTemplate.opsForValue();
+        ops.set(a,"abc");
+        return a;
+    }
+}
+```
+
+### 4.访问`/set`接口
+
+#### 4.1访问成功
+
+页面数据：
+
+![success_set.png](https://i.loli.net/2019/10/05/NvXhd6ugEszkLBj.png)
+
+Redis中的数据：
+
+![redis_res.png](https://i.loli.net/2019/10/05/6LJD73r5xAGTO4v.png)
+
+#### 4.2访问失败出现的原因
+
+配置虚拟机中的redis出问题，即IDEA控制台中输出无法连接redis
+
+![redis_conf.png](https://i.loli.net/2019/10/05/sHJNGWXy9gPchn8.png)
+
+将配置文件修改成上面的样子..
+
+##### 修改方法：
+
+1. 进入redis配置文件目录：`cd /etc/redis`
+2. 修改`redis.conf`：`vim redis.conf`
+3. 搜索`bind`，在普通模式下键盘输入：`/bind`，使用`n`和`N`来进行下上的搜索
+4. 搜索`protected`方法同上
+
+修改redis密码的方法：还是进入`redis.conf`，搜索`requirepass`，修改后面的参数就可以修改密码了
