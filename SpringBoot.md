@@ -877,6 +877,8 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
 }
 ```
 
+这个就是在内存中存放用户信息，在登陆验证的时候对比。
+
 ### 4.通过对应的路径拦截
 
 在上述配置类的基础上添加一个重写的方法：
@@ -1466,7 +1468,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
 }
 ```
 
-通过重写`configure`来加载，userService，判断用户的状态(用户名密码和输入密码是否相等 等作用)，数据库存放的密码都是密文存储，加密方式就是通过`BCryptPasswordEncoder`。
+通过重写`configure`来加载userService，判断用户的状态(用户名密码和输入密码是否相等 等作用)，数据库存放的密码都是密文存储，加密方式就是通过`BCryptPasswordEncoder`。
 
 当然上面的还没写完，因为还没配置相关权限访问页面的状态。简单的说说，就是重写`configure(HttpSecure)`方法来配置相关的权限访问页面，具体的通过上面的单个`HttpSecure`来配置，这里就不配置了。
 
@@ -1558,7 +1560,9 @@ public interface MenuMapper {
 
 #### 4.创建服务层
 
-UserService和上面的一样，而MenuService就是调用Mapper中的查询方法，将对应的角色和路径查出来。
+UserService和上面的一样，返回的都是一个用户信息。
+
+而MenuService就是调用Mapper中的查询方法，将对应的角色和路径查出来。
 
 #### 5.创建过滤器
 
@@ -1686,7 +1690,16 @@ public class MyAcessDecisionManager implements AccessDecisionManager {
 
 #### 7.创建配置类
 
-这个不多说了，就基本上和静态的差不多，代码上传到GitHub上了。
+要注意到配置类中有一个方法：
+
+```java
+ @Override
+ protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+        auth.userDetailsService(userService);
+ }
+```
+
+这个方法就是加载数据库中的用户，查看`UserDetailService`返回的是一个`user`对象，然后通过此方法来加载数据库中的用户信息。
 
 ## SpingBoot整合Redis
 
@@ -1767,6 +1780,113 @@ Redis中的数据：
 1. 进入redis配置文件目录：`cd /etc/redis`
 2. 修改`redis.conf`：`vim redis.conf`
 3. 搜索`bind`，在普通模式下键盘输入：`/bind`，使用`n`和`N`来进行下上的搜索
-4. 搜索`protected`方法同上
+4. 搜索`protected`方法同上，将`protected mode`改成`no`
 
 修改redis密码的方法：还是进入`redis.conf`，搜索`requirepass`，修改后面的参数就可以修改密码了
+
+### 5.防止redis关闭不了的解决办法
+
+启动时尽量不要使用`sudo su`来启动，使用`sudo -s`就可以
+
+因为redis开启了守护进程，此时无法使用`9`号信号和`18`号信号关闭，所以解决办法就是：
+
+`/etc/init.d/redis-server stop`关闭redis服务，这样就可以正常使用`redis-cli shutdown`来关闭redis了。
+
+## SpingSecurity整合Oauth2协议
+
+### 说在前面
+
+---
+
+**java11有个独特的特(bu)性(g)**
+
+不知道咋回事，反正添加这个依赖试试就好：
+
+```xml
+		<dependency>
+            <groupId>com.sun.xml.bind</groupId>
+            <artifactId>jaxb-core</artifactId>
+            <version>2.3.0.1</version>
+        </dependency>
+        <dependency>
+            <groupId>javax.xml.bind</groupId>
+            <artifactId>jaxb-api</artifactId>
+            <version>2.3.1</version>
+        </dependency>
+        <dependency>
+            <groupId>com.sun.xml.bind</groupId>
+            <artifactId>jaxb-impl</artifactId>
+            <version>2.3.1</version>
+        </dependency>
+```
+
+如果没有添加这些依赖的话，就会报下面的错：
+
+```java
+org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'springSecurityFilterChain' defined in class path resource 
+    [org/springframework/security/config/annotation/web/configuration/WebSecurityConfiguration.class]: Bean instantiation via factory method failed; nested exception is org.springframework.beans.BeanInstantiationException: Failed to instantiate 
+    
+[javax.servlet.Filter]: Factory method 'springSecurityFilterChain' threw exception;
+
+nested exception is java.lang.NoClassDefFoundError: javax/xml/bind/JAXBException
+```
+
+---
+
+
+
+### 1.编写授权服务器配置
+
+1. 首先要继承`AuthorizationServerConfigurerAdapter`，并且给这个类加上`@Configuration`和`@EnableAuthorizationServer`
+2. 然后自动注入三个`Bean`：`AuthenticationManager`、`RedisConnectionFactory`、`UserDetailsService`，其中第一个和第三个是要在后面的配置安全配置类中手动装配成Bean的。
+3. 重写`configure(ClientDetailsServiceConfigurer clients)`方法：结合上面上传到github上的源码来一行一行的解释
+	 * 首先设置授权服务器的id，之后获取token需要获取客户端的id
+	 * 然后就是设置授权模式
+	 * 设置过期时间
+	 * 设置静态资源ID，静态资源的获取需要这个ID
+	 * scope暂时先空着
+	 * secret就是获取这个token所需要的密码，如果是密文存储的话，就需要一个密码的编码器。
+4. 重写`configure(AuthorizationServerEndpointsConfigurer endpoints)`方法：
+	* 这个方法的作用就是让生成的token信息存放在redis中，需要上面自动装配的三个bean
+5. 重写`configure(AuthorizationServerSecurityConfigurer security)`，这个方法的作用就是设置授权服务器允许给客户端授权。
+
+### 2.设置资源服务器
+
+都是重写configure方法，不过第一个是设置静态资源的ID，一个是设置权限要求
+
+### 3.服务器端安全配置
+
+### 4.测试
+
+使用postman发送post请求，并且设置一些必要的参数：
+
+```
+http://localhost:8080/oauth/token
+```
+
+
+![oauth_getToken.png](https://i.loli.net/2019/10/06/HFuK3ZxM1czU5yN.png)
+
+查询redis中是否存储了信息：
+
+![redis_token.png](https://i.loli.net/2019/10/06/dZY5uDiLrNQtEye.png)
+
+
+
+测试不同的接口：
+
+```
+http://localhost:8080/admin/hello?access_token=xxx
+```
+
+就会出现：`hello admin`
+
+
+
+
+
+
+
+
+
+
