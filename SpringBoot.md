@@ -1113,6 +1113,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                         writer.close();
                     }
                 })
+//				允许所有登陆用户和匿名用户访问
                 .permitAll()
                 .and()
                 .logout()
@@ -1881,12 +1882,187 @@ http://localhost:8080/admin/hello?access_token=xxx
 
 就会出现：`hello admin`
 
+## 关于项目的一些总结(持续更新)
+
+### 1.要创建一个和前台传数据的类
+
+```java
+package com.example.project.model;
+
+public class RespBean {
+    private Integer status;
+    private String msg;
+    private Object obj;
+
+    private RespBean() {
+    }
+
+    public static RespBean build() {
+        return new RespBean();
+    }
+
+    public static RespBean ok(String msg, Object obj) {
+        return new RespBean(200, msg, obj);
+    }
+
+    public static RespBean ok(String msg) {
+        return new RespBean(200, msg, null);
+    }
+
+    public static RespBean error(String msg, Object obj) {
+        return new RespBean(500, msg, obj);
+    }
+
+    public static RespBean error(String msg) {
+        return new RespBean(500, msg, null);
+    }
+
+    private RespBean(Integer status, String msg, Object obj) {
+        this.status = status;
+        this.msg = msg;
+        this.obj = obj;
+    }
+
+    public Integer getStatus() {
+
+        return status;
+    }
+
+    public RespBean setStatus(Integer status) {
+        this.status = status;
+        return this;
+    }
+
+    public String getMsg() {
+        return msg;
+    }
+
+    public RespBean setMsg(String msg) {
+        this.msg = msg;
+        return this;
+    }
+
+    public Object getObj() {
+        return obj;
+    }
+
+    public RespBean setObj(Object obj) {
+        this.obj = obj;
+        return this;
+    }
+}
+```
+
+就是存在里面的信息可以发送到前端去，前端通过axios来获取json字符串，其中`msg`是返回给前端的信息，`obj`是登陆成功之后发送给前端的用户对象，还有状态码，传给前端给出相应的判断。
+
+### 2.怎么传数据呢？
+
+```java
+				.successHandler(new AuthenticationSuccessHandler() {
+                    @Override
+                    public void onAuthenticationSuccess(HttpServletRequest req, HttpServletResponse rep, Authentication authentication) throws IOException, ServletException {
+                        rep.setContentType("application/json;charset=utf-8");
+                        PrintWriter writer = rep.getWriter();
+                        Hr hr = (Hr) authentication.getPrincipal();
+                        hr.setPassword(null);
+                        RespBean respBean = RespBean.ok("登陆成功", hr);
+                        String s=new ObjectMapper().writeValueAsString(respBean);
+                        writer.write(s);
+                        writer.flush();
+                        writer.close();
+                    }
+                })
+```
+
+上面的是登陆成功之后传给前台的数据，
+
+1. 首先要设置返回给前台的页面的数据类型是JSON字符串
+2. getWriter()：发送请求内容至前端
+3. 因为`authentication`中存放的是登陆成功用户的信息，所以通过`getPrincipal`方法获取这个用户的对象，但是返回的是Object对象，所以需要强制转换成对应的用户对象
+4. 将返回给前端的密码设置为空，这个步骤保护数据安全
+5. 设置登陆成功的返回码和消息以及用户对象。
+6. `writeValueAsString()`把java对象转化成json字符串并打印出来，括号中的参数就是java对象
+7. `write()`就是将返回给前端的json字符串写到页面中，此时前端可以获取发送给前端的数据(`msg`、`obj`、`status`)
+8. 关闭回复
+
+登陆失败就是status的状态码不和成功的状态码相同以及没有发送obj对象，==值得注意的是==，这个status是400或者500，但是请求的状态码是200，是正常的，如果不是正常的可能服务器有些问题，以及出现其他的异常，这个在前端会处理异常。
+
+### 3.前端相关的配置
+
+#### 1.用户输入用户名和密码的时候的判断
+
+用户名和密码都输入完成之后，需要点击登陆，此时有个校验方法来判断用户名和密码是否都输入成功,即是否都不为空
+
+```js
+submit(){
+            this.$refs.loginForm.validate((valid)=>{
+                // 用户名和密码都已经输入的话
+                // 只是简单的校验用户名或者密码是否输入
+                if(valid){
+                    // rep是因为调用了axios的方法，得到了后台传过来的JSON字符串
+                    // msg是信息，obj是用户对象
+                    // 后面的是后来的一些方法，如果进入了这个分支，就说明输入正常
+                    // 但是无法知道用户名和密码输入是否正确
+            // 因为在api.js中设置了axios，在那里根据后端返回的状态码判断用户名和密码输入是否正确
+                    this.postKeyValueRequest('/dologin',this.loginForm).then(rep=>{
+                        if(rep){
+                            window.sessionStorage.setItem("user",JSON.stringify(rep.obj));
+                            // 在Main.js中装进来的
+                            // replace无法返回到登陆页
+                            this.$router.replace('/home')
+                        }
+                    })
+                }else{
+                    this.$message.error("请输入用户名和密码")
+                    return false;
+                }
+            });
+        }
+```
+
+#### 2.配置页面跳转
+
+新建`Home.vue`,配置router.js ,即加载对应页面:
+
+```js
+import Home from './views/Home.vue'
+
+{
+      path: '/home',
+      name: 'Home',
+      component: Home
+    }
+```
 
 
 
+登陆成功之后，使用`this.$router.replace('/home')`跳转到`home`页面去了，使用replace方法的原因是为了不让用户在登陆成功转到home页面后返回登陆页面。
 
+#### 3.解决开发环境下跨域的问题(前后端端口不一致)
 
+因为一个端口只能一个进程占用，所以要解决跨域的问题。解决办法就是：在项目目录下新建一个文件`vue.config.js`，添加下面的代码：
 
+```js
+let proxyObj={}
+proxyObj['/'] = {
+    ws: false,
+    target: 'http://localhost:8080/',
+    changeOrigin: true,
+    pathRewrite:{
+        '^/':''
+    }
+}
 
+module.exports={
+    devServer:{
+        port: 8081,
+        proxy: proxyObj,
+		autoOpenBrowser: true
+    }
+}
+```
 
+这样就是前端的端口号是8081，后台的端口号为8080，项目运行之后自动打开浏览器。
+
+#### 4.封装请求和后台向前台发送数据请求处理
 
