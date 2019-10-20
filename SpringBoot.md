@@ -886,6 +886,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
 ```java
     @Override
     protected void configure(HttpSecurity http) throws Exception {
+//				开启配置
         http.authorizeRequests()
 //                在admin路径下的任意地址，只能admin权限的才能登陆
                 .antMatchers("/admin/**").hasRole("admin")
@@ -899,6 +900,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
 在`4`中的代码增加下面的代码：
 
 ```java
+//		剩下的只要登陆就能访问				
 				.anyRequest().authenticated()
                 .and()
                 .formLogin()
@@ -914,6 +916,8 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
 
 然后再访问下面的请求，注意是POST请求
 ![dologin_username_password.png](https://i.loli.net/2019/10/02/B1Et5J2Ye6KLGUg.png)
+
+如果有中文的话，还是在body里面写用户名和密码，再使用post请求发送
 
 ### 6.完善表单登陆
 
@@ -1571,6 +1575,14 @@ UserService和上面的一样，返回的都是一个用户信息。
 
 实现了**`FilterInvocationSecurityMetadataSource`**这个接口，代码注释中都写得很详细了，就不多说了，主要的是要将最后一个重写的方法设置返回值为**true**
 
+ 1.一开始注入了MenuService，MenuService的作用是用来查询数据库中url pattern和role的对应关系，查询结果是一个List集合，集合中是Menu类，Menu类有两个核心属性，一个是url pattern，即匹配规则(比如`/admin/**`)，还有一个是List<Role>,即这种规则的路径需要哪些角色才能访问。 
+
+ 2.我们可以从getAttributes(Object o)方法的参数o中提取出当前的请求url，然后将这个请求url和数据库中查询出来的所有url pattern一一对照，看符合哪一个url pattern，然后就获取到该url pattern所对应的角色，当然这个角色可能有多个，所以遍历角色，最后利用SecurityConfig.createList方法来创建一个角色集合。 
+
+ 3.第二步的操作中，涉及到一个优先级问题，比如我的地址是`/employee/basic/hello`,这个地址既能被`/employee/**`匹配，也能被`/employee/basic/**`匹配，这就要求我们从数据库查询的时候对数据进行排序，将`/employee/basic/**`类型的url pattern放在集合的前面去比较。 
+
+ 4.如果getAttributes(Object o)方法返回null的话，意味着当前这个请求不需要任何角色就能访问，甚至不需要登录。但是在我的整个业务中，并不存在这样的请求，我这里的要求是，所有未匹配到的路径，都是认证(登录)后可访问，因此我在这里返回一个`ROLE_LOGIN`的角色，这种角色在我的角色数据库中并不存在，因此我将在下一步的角色比对过程中特殊处理这种角色。 
+
 ```java
 package com.example.springsecuritydb.Filter;
 
@@ -1655,11 +1667,12 @@ import java.util.Collection;
 //  已经得到了需要哪些角色，将这些角色和已有角色对比
 @Component
 public class MyAcessDecisionManager implements AccessDecisionManager {
-//    第一个参数存放着的是登陆用户的信息，第二个参数就是MyFilter中的Object参数
+//    第一个参数存放着的是登陆用户的信息（看successhandler中的参数），第二个参数就是MyFilter中的Object参数
 //    第三个参数是访问路径需要的权限
     @Override
     public void decide(Authentication authentication, Object o, Collection<ConfigAttribute> collection) throws AccessDeniedException, InsufficientAuthenticationException {
         for (ConfigAttribute Attribute : collection) {
+            //            这个是判断需要的角色是否等于ROLE_LOGIN
             if("ROLE_LOGIN".equals(Attribute.getAttribute())){
                 if(authentication instanceof AnonymousAuthenticationToken){
                     throw new AccessDeniedException("非法请求");
@@ -1700,7 +1713,20 @@ public class MyAcessDecisionManager implements AccessDecisionManager {
  }
 ```
 
-这个方法就是加载数据库中的用户，查看`UserDetailService`返回的是一个`user`对象，然后通过此方法来加载数据库中的用户信息。
+这个方法就是加载数据库中的用户，查看`UserDetailService`返回的是一个`user`对象，然后通过此方法来加载数据库中的用户信息。还要在config类中添加下面的代码。
+
+```java
+ http.authorizeRequests()
+                .withObjectPostProcessor(new ObjectPostProcessor<FilterSecurityInterceptor>() 					{
+                    @Override
+                    public <O extends FilterSecurityInterceptor> O postProcess(O o) {
+                       o.setAccessDecisionManager(acessDecisionManager);
+                       o.setSecurityMetadataSource(myFilter);
+                       return o;
+                    }
+```
+
+
 
 ## SpingBoot整合Redis
 
@@ -2065,4 +2091,139 @@ module.exports={
 这样就是前端的端口号是8081，后台的端口号为8080，项目运行之后自动打开浏览器。
 
 #### 4.封装请求和后台向前台发送数据请求处理
+
+就是将访问后台的接口封装成一个`js`文件，如果需要做请求的时候就调用这个文件中的方法：
+
+```js
+// axios为vue推荐的ajax
+import axios from 'axios'
+import { Message } from 'element-ui';
+
+// 请求失败和成功的分别处理
+axios.interceptors.response.use(success=>{
+    // success.status 为http的响应码 success.data.status 为自定义的响应码
+    // 业务上的错误，不是服务器错误
+    if(success.status && success.status == 200 && success.data.status == 500){
+        Message.error({message:success.data.msg});
+        return ;
+    }
+    if(success.data.msg){
+        Message.success({message:success.data.msg})
+    }
+    return success.data;
+},error=>{
+    if(error.response.status == 504 || error.response.status == 404 ){
+        Message.error({message:'服务器出问题了'});
+    }else if(error.response.status == 403){
+        Message.error({message:'权限不足'});
+    }else if(error.response.status == 401){
+        Message.error({message:'未登陆'});
+    }else{
+        if(error.response.data.message){
+            Message.error({message:error.response.data.message});
+        }else{
+            Message.error({message:'未知问题'});
+        }
+    }
+    return ;
+})
+
+// 下面的所有方法都是将请求封装
+let base=''
+export const postKeyValueRequest=(url,param)=>{
+    return axios({
+        // 请求方式是post
+        method: 'post',
+        // 不是单引号，是esc下面的那个符号
+        // 传进来的url就是base+url
+        url: `${base}${url}`,
+        data: param,
+        // 如果没有下面的这些代码的话，`data:param`将以json的形式传到服务器，而不是key-value
+        // 后台登陆security只能支持key-value的形式传参
+        transformRequest: [function(data){
+            let ret='';
+            for (let i in data) {
+                // 这里的ret就是username=xxx&password=xxx&
+                ret+=encodeURIComponent(i)+'='+encodeURIComponent(data[i])+'&'
+            }
+            return ret;
+        }],
+        headers:{
+            'Content-Type':'application/x-www-form-urlencoded'
+        }
+    })
+}
+
+export const getRequest=(url,param)=>{
+    return axios({
+        method: 'get',
+        url: `${base}${url}`,
+        data: param
+    })
+}
+
+export const putRequest=(url,param)=>{
+    return axios({
+        method: 'put',
+        url: `${base}${url}`,
+        data: param
+    })
+}
+
+export const deleteRequest=(url,param)=>{
+    return axios({
+        method: 'delete',
+        url: `${base}${url}`,
+        data: param
+    })
+}
+
+export const postRequest=(url,param)=>{
+    return axios({
+        method: 'post',
+        url: `${base}${url}`,
+        data: param
+    })
+}
+```
+
+后台是怎么向前台发送数据的呢：比如登陆：
+
+```js
+this.postKeyValueRequest('/dologin',this.loginForm).then(rep=>{
+                        if(rep){
+                            window.sessionStorage.setItem("user",JSON.stringify(rep.obj));
+                            // 在Main.js中装进来的
+                            // replace无法返回到登陆页
+                            this.$router.replace('/home')
+                        }
+```
+
+这个rep就是后台返回过来的一个`response`，里面就是装着登陆用户的信息，**简单来说**，如果想通过后端接口获取数据的话，就使用封装好的方法，比如`getRequest(url).then(data=>{})`这种形式，这样data中存放的就是后台的数据。
+
+#### 5.模块化开发
+
+就是新建组件说白了就是vue文件，然后在想用的页面中调用这个页面，比如我现在在项目根目录下面创建了一个目录`components`，在该目录下新建一个`PosMana.vue`文件，在`src/sys/sysbasic.vue`中的`<script>`中导入(import PosMana from ../../compenents/PosMana)，然后再将`PosMana`写到`vue`的`Component`属性中，然后就可以在上面的html页面通过`<PosMana ></PosMana >`来调用这个页面了。
+
+### 4.限制在登陆之前访问项目其他网址
+
+在java配置类中写入下面这段代码：
+
+```java
+				.exceptionHandling()
+                .authenticationEntryPoint(new AuthenticationEntryPoint() {
+                    @Override
+                    public void commence(HttpServletRequest req, HttpServletResponse rep, AuthenticationException e) throws IOException, ServletException {
+                        rep.setContentType("application/json;charset=utf-8");
+                        PrintWriter writer = rep.getWriter();
+                        RespBean respBean = RespBean.error("访问失败，请登陆！");
+                        if(e instanceof InsufficientAuthenticationException){
+                            respBean.setMsg("请求失败，请联系管理员");
+                        }
+                        writer.write(new ObjectMapper().writeValueAsString(respBean));
+                        writer.flush();
+                        writer.close();
+                    }
+                })
+```
 
