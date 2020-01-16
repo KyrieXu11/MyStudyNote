@@ -31,6 +31,36 @@
 
 
 
+## @RequestParam的作用
+
+如果访问的url是`localhost:8080/hello?id=1`，后台怎么获取id的值呢？
+
+那就是这种方式：
+
+```java
+	@GetMapping("/hello")
+    public Integer getParam(@RequestParam("id") Integer id){
+        return id;
+    }
+```
+
+1. 当然这个如果不想要其中的参数是必要的参数的话，可以在`@RequestParam`中多设置一个参数**@RequestParam(required = false)`**
+2. 这个可以简写成 `@RequestParam Integer id`
+3. 可以设置默认值：参数是`defaultValue = "test"`
+4. 获取url中所有的参数
+
+```java
+    @PostMapping("/api/foos")
+    @ResponseBody
+    public String updateFoos(@RequestParam Map<String,String> allParams) {
+        return "全部的参数是 " + allParams.entrySet();
+    }
+```
+
+
+
+
+
 ## @HttpMessageConverter的作用：
 
 1. 将服务器端返回的对象序列化成`Json`格式的数据
@@ -290,7 +320,7 @@ public class MyErrorViewResolver extends DefaultErrorViewResolver {
 
 ### 什么是跨域？
 
-所谓的跨域就是**当一个请求url的协议、域名、端口三者之间任意一个与当前页面url不同即为跨域**
+所谓的跨域就是**当一个请求url的协议、域名、端口三者之间任意一个与当前页面url不同即为跨域**，打个比方，前端启动的端口是`8081`，后端启动的端口是`8080`，那么两者之间的通信如果不通过`nginx`的话，必将发生跨域。
 
 
 
@@ -791,6 +821,284 @@ public class DemoApplicationTests {
 
 这个的输出结果就是book的全部信息了，如果是`@Qualifier("bookdaoImpl1")`的话，那就是输出1了。
 
+## SpringBoot整合WebSocket实现在线群聊
+
+### 1.首先导入需要的依赖
+
+```xml
+		<dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+            <version>2.2.0.RELEASE</version>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/org.webjars/sockjs-client -->
+        <dependency>
+            <groupId>org.webjars</groupId>
+            <artifactId>sockjs-client</artifactId>
+            <version>1.1.2</version>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/org.webjars.bower/jquery -->
+        <dependency>
+            <groupId>org.webjars.bower</groupId>
+            <artifactId>jquery</artifactId>
+            <version>3.4.1</version>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/org.webjars/stomp-websocket -->
+        <dependency>
+            <groupId>org.webjars</groupId>
+            <artifactId>stomp-websocket</artifactId>
+            <version>2.3.3</version>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/org.webjars/webjars-locator-core -->
+        <dependency>
+            <groupId>org.webjars</groupId>
+            <artifactId>webjars-locator-core</artifactId>
+            <version>0.41</version>
+        </dependency>
+```
+
+这些依赖包分别是：`websocket` 、`JQuery`
+
+`sockjs-client`: 创建了一个低延迟、全双工的浏览器和web服务器之间通信通道，[点击访问Sockjs-Client相关说明][ https://www.jianshu.com/p/9e37d343267e ]。
+
+`stomp-websocket`：[点击访问Stomp-websocket相关][ https://blog.csdn.net/m0_37542889/article/details/83750665 ]
+
+`webjars-locator-core`：webjars的版本定位工具
+
+### 2.配置后台的WebSocket
+
+```java
+//WebSocketConfig类
+package com.example.websocket.Config;
+
+import org.springframework.context.annotation.Configuration;
+import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
+import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
+import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+
+@Configuration
+//开启消息代理
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+//    配置消息代理
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry registry) {
+//        设置消息代理的前缀
+        registry.enableSimpleBroker("/topic");
+//        规定哪些消息对方法处理哪些消息给代理处理
+//        这个是为了区分开来两个方式
+//        如果是`/app`开始的那就是代理处理
+        registry.setApplicationDestinationPrefixes("/app");
+    }
+
+//    建立连接点,websocket连接的建立，服务端必须有一个点给他去建立
+    @Override
+    public void registerStompEndpoints(StompEndpointRegistry registry) {
+//        添加连接点，启用SockJS
+        registry.addEndpoint("/chat").withSockJS();
+    }
+}
+```
+
+1. 因为是配置类，所以需要加上`@Configuration`注解，第二个注解是开启消息代理，消息代理就是待会客户端发消息需要经过消息代理来广播， 能够在 WebSocket 上启用 STOMP 。
+2. 设置消息代理的前缀为`/topic`，以便客户端指定消息代理来广播消息，所以待会的`controller`需要使用`@sendto("/topic/**")`来发送消息到`/topic`的消息代理
+3. 而应用程序目的的前缀是客户端发送消息需要发送消息的目的地的前缀，因为我在`controller`中使用了`@MessageMapping("/hello")`，所以客户端发消息需要发送到`/app/hello`中
+4. `registerStompEndpoints`这个方法的作用就是建立连接点，`addEndpoint`中的字符串是前端建立`sockjs`中的字符串，二者要保持一致
+
+```java
+//	Controller类
+package com.example.websocket.Controller;
+
+import com.example.websocket.Bean.Message;
+import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.handler.annotation.SendTo;
+import org.springframework.stereotype.Controller;
+
+@Controller
+public class GreetingController {
+
+//    用于处理浏览器中的消息，浏览器通过hello接口来发送消息给服务端
+    @MessageMapping("/hello")
+//    因为有topic由代理广播到连接上来的客户端上去
+    @SendTo("/topic/greetings")
+    public Message greeting(Message message){
+        return message;
+    }
+    
+    //	message中包含两个字段：name,content
+}
+```
+
+Controller需要返回给消息代理一个Message对象
+
+### 3.页面配置
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <script type="text/javascript"
+            src="webjars/jquery/3.4.1/dist/jquery.min.js"></script>
+    <script type="text/javascript"
+            src="webjars/sockjs-client/1.1.2/sockjs.min.js"></script>
+    <script type="text/javascript"
+            src="webjars/stomp-websocket/2.3.3/stomp.min.js"></script>
+
+</head>
+<body>
+<div>
+    <table>
+        <tr>
+            <td>请输入用户名</td>
+            <td><input type="text" id="name"></td>
+        </tr>
+        <tr>
+            <td><input type="button" id="connect" value="连接"></td>
+            <td><input type="button" id="disconnect" value="断开连接"></td>
+        </tr>
+    </table>
+</div>
+<div id="chat" style="display: none;">
+    <table>
+        <tr>
+            <td>请输入聊天内容</td>
+            <td><input type="text" id="content"></td>
+            <td><input type="button" id="send" value="发送"></td>
+        </tr>
+    </table>
+    <div id="conversation">正在聊天中.....</div>
+</div>
+<script>
+    $(function () {
+        $("#connect").click(function () {
+            connect();
+        });
+        $("#disconnect").click(function () {
+            if(stompClient!=null){
+                //断开连接
+                stompClient.disconnect();
+            }
+            setConnected(false);
+        });
+
+        $("#send").click(function () {
+            //第三个参数是一个JSON对象，发送的就是JSON对象
+            stompClient.send("/app/hello",{},JSON.stringify({'name':$("#name").val(),'content':$("#content").val()}))
+        })
+    });
+
+    var stompClient = null;
+
+    function showGreeting(msg) {
+        $("#conversation").append('<div>'+msg.name+'：'+msg.content+'<div>')
+    }
+
+    function connect() {
+        if(!$("#name").val()){
+            return;
+        }
+        //和chat建立连接
+        var socket = new SockJS('/chat');
+        //建立stompClient
+        stompClient=Stomp.over(socket);
+        //建立连接，第一个参数：设置基本配置比如优先级，第二个参数是连接成功的回调，第三个参数是连接失败的回调
+        stompClient.connect({},function (success) {
+            //设置连接成功之后的控件的状态
+            setConnected(true);
+            //订阅服务上的消息，第一个参数订阅服务器的地址，即设置监听
+            //第二个参数为回调的消息
+            stompClient.subscribe('/topic/greetings',function (msg) {
+                //回调的消息存放在msg的body(这里的body是页面的属性就比如header之类的)中
+                //将返回的消息格式化成json格式
+                showGreeting(JSON.parse(msg.body));
+            })
+        })
+    }
+    
+    function setConnected(flag) {
+        //设置控件属性
+        $("#connect").prop("disabled",flag);
+        $("#disconnect").prop("disabled",!flag);
+        if(flag){
+            $("#chat").show();
+        }else {
+            $("#chat").hide();
+        }
+    }
+</script>
+</body>
+</html>
+```
+
+1. 上面的几个控件都不用说了，设置了一个全局变量`stompClient`并且初始化为`null`
+2. 第一个函数：点击连接按钮的话就调用`connect`函数，如果点击断开连接的话，判断客户端对象是否为null，如果不是就调用`disconnect`函数
+3. `connect`函数：如果输入框中的值是空的就不继续执行，否则**使用SockJS和后端设置的连接点进行建立连接**·，`调用Stomp`的over方法，建立`stompClient`即客户端，调用`stompClient`的connect方法，有三个参数，第一个参数是设置优先级之类的基本参数，第二个参数是连接成功的回调，第三个参数是连接失败的回调，在函数中设置监听，并且获取信息，并且展示出来
+4. 发送消息的函数是发送到`/hello`接口，然后再发送到消息代理上去。
+
+### 4.其他的知识
+
+**@OnOpen** 表示有浏览器链接过来的时候被调用
+**@OnClose** 表示浏览器发出关闭请求的时候被调用
+**@OnMessage** 表示浏览器发消息的时候被调用
+**@OnError** 表示有错误发生，比如网络断开了等等
+
+**sendMessage** 用于向浏览器回发消息 
+
+```java
+package com.how2java.bitcoin;
+ 
+import java.io.IOException;
+import javax.websocket.OnClose;
+import javax.websocket.OnError;
+import javax.websocket.OnMessage;
+import javax.websocket.OnOpen;
+import javax.websocket.Session;
+import javax.websocket.server.ServerEndpoint;
+ 
+/**
+ * @ServerEndpoint 注解是一个类层次的注解，它的功能主要是将目前的类定义成一个websocket服务器端,
+ * 注解的值将被用于监听用户连接的终端访问URL地址,客户端可以通过这个URL来连接到WebSocket服务器端
+ */
+@ServerEndpoint("/ws/bitcoinServer")
+public class BitCoinServer {
+     
+    //与某个客户端的连接会话，需要通过它来给客户端发送数据
+    private Session session;
+ 
+    @OnOpen
+    public void onOpen(Session session){
+        this.session = session;
+        ServerManager.add(this);    
+    }
+     
+    public void sendMessage(String message) throws IOException{
+        this.session.getBasicRemote().sendText(message);
+    }
+ 
+    @OnClose
+    public void onClose(){
+        ServerManager.remove(this); 
+    }
+ 
+    @OnMessage
+    public void onMessage(String message, Session session) {
+        System.out.println("来自客户端的消息:" + message);
+    }
+ 
+    @OnError
+    public void onError(Session session, Throwable error){
+        System.out.println("发生错误");
+        error.printStackTrace();
+    }
+ 
+}
+```
+
+
+
 ## SpringSecurity使用
 
 ### 1.导入依赖
@@ -894,6 +1202,14 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 .antMatchers("/user/**").hasAnyRole("admin","user");
     }
 ```
+
+### 一些方法的作用
+
+`.authorizeRequests()`的作用就是开启配置。
+
+`.anyRequest().authenticated()`:任何请求都只要登陆了就可以访问。
+
+`.PermitAll`:和登陆相关的接口不需要验证，直接通过。
 
 ### 5.使用Postman来测试接口
 
@@ -1628,7 +1944,7 @@ public class MyFilter implements FilterInvocationSecurityMetadataSource {
                 return SecurityConfig.createList(rolestr);
             }
         }
-//        如果匹配不上，就返回一个login对象，表示登陆之后就能访问
+//        如果匹配不上，就返回一个login对象，表示登陆之后就能访问，就是一级菜单的角色
 //        不是这个返回这个就可以访问了，还要看后续操作处理，实际上这个也就是一个标记
         return SecurityConfig.createList("ROLE_LOGIN");
     }
@@ -2010,6 +2326,7 @@ public class RespBean {
 6. `writeValueAsString()`把java对象转化成json字符串并打印出来，括号中的参数就是java对象
 7. `write()`就是将返回给前端的json字符串写到页面中，此时前端可以获取发送给前端的数据(`msg`、`obj`、`status`)
 8. 关闭回复
+9. ==不仅仅是上面的方式==，前端还可以通过访问后端写好的接口(`Controller`中写的接口)来获取返回的`json`数据
 
 登陆失败就是status的状态码不和成功的状态码相同以及没有发送obj对象，==值得注意的是==，这个status是400或者500，但是请求的状态码是200，是正常的，如果不是正常的可能服务器有些问题，以及出现其他的异常，这个在前端会处理异常。
 
@@ -2053,7 +2370,7 @@ submit(){
 ```js
 import Home from './views/Home.vue'
 
-{
+	{
       path: '/home',
       name: 'Home',
       component: Home
@@ -2108,6 +2425,7 @@ axios.interceptors.response.use(success=>{
         return ;
     }
     if(success.data.msg){
+        //	显示的是后端发送回来的RespBean数据
         Message.success({message:success.data.msg})
     }
     return success.data;
@@ -2205,6 +2523,72 @@ this.postKeyValueRequest('/dologin',this.loginForm).then(rep=>{
 
 就是新建组件说白了就是vue文件，然后在想用的页面中调用这个页面，比如我现在在项目根目录下面创建了一个目录`components`，在该目录下新建一个`PosMana.vue`文件，在`src/sys/sysbasic.vue`中的`<script>`中导入(import PosMana from ../../compenents/PosMana)，然后再将`PosMana`写到`vue`的`Component`属性中，然后就可以在上面的html页面通过`<PosMana ></PosMana >`来调用这个页面了。
 
+#### 6.动态加载菜单页面
+
+**注意这个只是动态加载，没有牵扯到权限的问题**
+
+1.在后端写好了`/sys/config/menu`，这个接口
+
+```java
+package com.example.project.controller.Config;
+
+import com.example.project.model.Menu;
+import com.example.project.service.MenuService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/sys/config")
+public class SystemConfigController {
+
+    @Autowired
+    MenuService menuService;
+
+//    不能使用前端发送过来的ID
+//    因为前端发送的ID就算经过验证也无法保证正确，所以使用存在内存中的ID
+    @GetMapping("/menu")
+    public List<Menu> getMenusByHrId(){
+        return menuService.getMenusByHrId();
+    }
+
+}
+```
+
+2.在前端使用了`vuex`的技术，`vuex`就相当于一个`sessionstorage`，在服务器运行期间都可以存放值，这样就可以不用频繁的添加删除数据加重服务器的负担。
+
+3.使用vuex先在`/store`下面新建一个js文件，这里就存放着vuex的存储空间`store`，这一步代码中的注释写的很详细
+
+```js
+import Vue from 'vue'
+import Vuex from 'vuex'
+
+Vue.use(Vuex)
+
+export default new Vuex.Store({
+    // state是定义变量的地方
+    state:{
+        // 从服务器加载的路由地址都存放在这
+        routes: []
+    },
+    // 相当于setter方法
+    mutations:{
+        // 只需要传data参数就可以，就是vue定义数据的地方
+        initRoutes(state,data){
+            state.routes=data;
+        }
+    },
+    actions:{
+
+    }
+})
+```
+
+4.有了存储的地方，就要获取数据了，在`utils`包下新建一个`menu.js`工具包，里面有一个函数就是：首先判断vuex中是否有数据，如果有的话，就直接返回不继续执行，如果没有的话，就通过上面的后端接口来异步获取数据，获取的数据都是`json字符串`，所以如果想要转换成对应的页面的话，就得定义另一个函数：
+
 ### 4.限制在登陆之前访问项目其他网址
 
 在java配置类中写入下面这段代码：
@@ -2227,3 +2611,91 @@ this.postKeyValueRequest('/dologin',this.loginForm).then(rep=>{
                 })
 ```
 
+5.使用Postman测试接口的错误
+
+如果在地址栏中输入了两个斜杠的话，就会报下面这个错
+
+```json
+{
+    "timestamp": "2019-10-22T13:03:01.007+0000",
+    "status": 500,
+    "error": "Internal Server Error",
+    "message": "The request was rejected because the URL was not normalized.",
+    "path": "//system/basic/pos/"
+}
+```
+
+### 5.后端发送JSON字符串给前端出现的问题
+
+在`Bean`中没有Get方法的话，将无法反序列化成Json字符串
+
+### 6.在RestController中数组的接收数据问题
+
+如果方法的参数是一个数组，那么可以不用在参数前面加任何注解
+
+```java
+@DeleteMapping("/")
+public RespBean A(Integer[] array){
+    return RespBean.ok("删除成功！");
+}
+```
+
+就像上面这样就可以使用`/array1=xx&array2=xx`来调用这个接口
+
+### 7.关于put请求的返回值和servletrequest
+
+如果请求的方式是`put`，那么如果在方法体内需要使用`servletRequest`的相关方法的时候，不能返回一个`RespBean`，只能单纯返回一个值....我也不知道为什么....
+
+### 8.Maven项目中如何读取Properties文件
+
+#### 1. 通过ResourceUtils来读取
+
+不过这样做的话得在文件前面加上一个`classpath:`前缀，代码如下
+
+```java
+			file = ResourceUtils.getFile("classpath:application.properties");
+            InputStream in = new FileInputStream(file);
+            properties=new Properties();
+            properties.load(in);
+            System.out.println(properties.toString());
+            in.close();
+```
+
+#### 2.通过类加载器来获取文件的输入流
+
+这样做的方法比较的快捷简便，这里的`in`也是上面的输入流，通过类加载器封装好的方法直接读取输入流
+
+```java
+ in = this.getClass().getClassLoader().getResourceAsStream("application.properties");
+            properties=new Properties();
+            assert in != null;
+            properties.load(in);
+            System.out.println(properties.toString());
+            in.close();
+```
+
+
+
+### 9.XML文件格式的解析方式
+
+我这里使用的是Dom4j的方式来读取xml文件
+
+1. 如果是java对象转换成xml格式的文件，有下面几个步骤
+
+   1. 获取一个Document的对象：`Document doc= DocumentHelper.createDocument();`
+   2. 创建一个根节点：`Element root = doc.addElement("xml");`
+   3. 给这个根节点添加子节点，并且添加每个子节点的属性，添加子节点的方法就是`Element element = root.addElement(名称)`，而给每个子节点之间设置的文字是：`element.setText(文本内容)`
+   4. 将上面的`Document`对象转换成`XML`格式的文本，使用`XMLWriter`，用法就和`Response`的`writer`的用法是一致相同的
+   5. 值得一提的是，如果需要的话，可以设置成不转义，不转义就是`<`还是正常显示的
+
+2. XML文本转换成java对象
+
+   还是使用Dom4j的形式，步骤有下面几步：
+
+   1. 将文件转换成输入流
+   2. 使用`SAXReader`创建的对象，调用`read`方法，将输入流转换成`Document`对象
+   3. 获取根节点下面的元素，`List<Element> elements = doc.getRootElement().elements();`即通过这种方式来获取所有的标签，然后就可以依次遍历，获取想要的信息了
+
+### 10.`@ControllerAdvice`或者`@RestControllerAdvice`注解不起作用的原因
+
+可能是在异常被抛出的时候，就当场被Catch掉了，所以没有进`@ControllerAdvice`处理

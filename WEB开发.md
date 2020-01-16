@@ -71,6 +71,19 @@ public void addResourceHandlers(ResourceHandlerRegistry registry) {
 3. 欢迎页都是自动寻找静态文件夹下的`index.html`文件
 4. 所有的"/**/favaicon.ico"都是在静态文件夹下
 
+## 2.不使用模板引擎访问静态页面
+
+要将静态页面放可以访问的静态资源目录下面，比如现在我放在`static/pages`下，那么controller层的代码就是
+
+```java
+@Controller
+public String toHello(){
+    return "pages/hello.html"
+}
+```
+
+这样才能访问静态页面。
+
 ## 3.模板引擎(thymeleaf)
 
 #### 1.引入thymeleaf
