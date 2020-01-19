@@ -2699,3 +2699,201 @@ public RespBean A(Integer[] array){
 ### 10.`@ControllerAdvice`或者`@RestControllerAdvice`注解不起作用的原因
 
 可能是在异常被抛出的时候，就当场被Catch掉了，所以没有进`@ControllerAdvice`处理
+
+### 11.在项目中添加 Swagger2的支持
+
+1. #### 导入Maven依赖
+
+   ```xml
+   		<dependency>
+               <groupId>io.springfox</groupId>
+               <artifactId>springfox-swagger2</artifactId>
+               <version>2.9.2</version>
+           </dependency>
+           <dependency>
+               <groupId>io.springfox</groupId>
+               <artifactId>springfox-swagger-ui</artifactId>
+               <version>2.9.2</version>
+           </dependency>
+   ```
+
+2. #### 配置swagger2
+
+   ```java
+   @Configuration
+   @EnableSwagger2
+   public class Swagger2Config {
+   
+       @Bean
+       public Docket CreateApiDescription(){
+           return new Docket(DocumentationType.SWAGGER_2)
+                   .pathMapping("/")
+                   .select()
+                   .apis(RequestHandlerSelectors.basePackage("com.kyriexu"))
+                   .paths(PathSelectors.any())
+                   .build().apiInfo(new ApiInfoBuilder().title("Api文档").description("Api文档").build());
+       }
+   }
+   ```
+
+   说白了就是创建一个类型为Docket的bean，然后还要开启swagger2，将这个类设置成一个配置类，让spring能够扫描到
+
+3. #### 配置接口的作用和实体类的属性作用
+
+   下面是配置接口的作用的类，由于我这里是没有接收参数的，所以单独的说一下怎么设置接收参数的作用：
+
+   接收参数的设置是使用` @ApiImplicitParam`，如果有多个参数，则需要使用`@ApiImplicitParams`将前面的参数集合起来
+
+   ```java
+   @ApiImplicitParams({
+               @ApiImplicitParam(name = "username", value = "用户名", defaultValue = "李四"),
+               @ApiImplicitParam(name = "address", value = "用户地址", defaultValue = "深圳", required = true)
+       })
+   ```
+
+   形式就像上面描述的一样
+
+   ```java
+   package com.kyriexu.Controller;
+   
+   import com.kyriexu.model.RespBean;
+   import io.swagger.annotations.Api;
+   import io.swagger.annotations.ApiOperation;
+   import org.springframework.web.bind.annotation.GetMapping;
+   import org.springframework.web.bind.annotation.RestController;
+   
+   @RestController
+   @Api("测试权限使用的接口")
+   public class HelloController {
+   
+       @GetMapping("/hello")
+       @ApiOperation("所有用户都可以访问的接口，只需要登陆")
+       public RespBean hello(){
+           return RespBean.ok("hello");
+       }
+   
+       @ApiOperation("只有管理员才能访问的接口")
+       @GetMapping("/admin/hello")
+       public RespBean admin(){
+           return RespBean.ok("管理员，你好");
+       }
+   
+       @ApiOperation("管理员和老师能访问的接口")
+       @GetMapping("/teacher/hello")
+       public RespBean teacher(){
+           return RespBean.ok("老师，你好");
+       }
+   
+       @ApiOperation("管理员老师学生能访问的接口")
+       @GetMapping("/student/hello")
+       public RespBean student(){
+           return RespBean.ok("学生，你好");
+       }
+   }
+   ```
+
+   而实体类的作用配置如下：
+
+   简单的说一下，首先必须要在类上添加一个注解`@ApiModel`，让swagger知道这是一个实体类，然后再给各个属性设置`@ApiModelProperty`
+
+   ```java
+   package com.kyriexu.model;
+   
+   import io.swagger.annotations.ApiModel;
+   import io.swagger.annotations.ApiModelProperty;
+   import lombok.Data;
+   import lombok.ToString;
+   
+   @Data
+   @ToString
+   @ApiModel
+   public class RespBean {
+       @ApiModelProperty("状态码")
+       private int status;
+   
+       @ApiModelProperty("后端传给前端的信息")
+       private String msg;
+   
+       @ApiModelProperty("后端传给前端的对象")
+       private Object object;
+   
+       public RespBean(int status, String msg) {
+           this.status = status;
+           this.msg = msg;
+       }
+   
+       public RespBean() {
+       }
+   
+       public RespBean(int status, String msg, Object object) {
+           this.status = status;
+           this.msg = msg;
+           this.object = object;
+       }
+   
+       public static RespBean error(String msg){
+           return new RespBean(500,msg);
+       }
+   
+       public static RespBean error(String msg,Object o){
+           return new RespBean(500,msg,o);
+       }
+   
+       public static RespBean ok(String msg){
+           return new RespBean(200,msg);
+       }
+   
+       public static RespBean ok(String msg,Object o){
+           return new RespBean(200,msg,o);
+       }
+   }
+   ```
+
+
+### 12.在springboot整合springsecurity的时候获取登陆用户的信息
+
+收到spring源码的影响，知道保存bean的信息的类是`BeanDefinitionHolder`，这里也是一样的通过下面的这个代码获取信息：
+
+```java
+        User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+```
+
+首先先获取上下文，然后获取认证的信息，再获取认证的对象，强制转换成为`User`对象，进而获取到登陆用户的信息，然后还有两种办法就是：
+
+```java
+	@ApiOperation("测试接口1：测试能否正确获取已登陆对象的信息；测试通过")
+    @GetMapping("/test1")
+    public Integer getAuthentication(){
+        User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        return user.getId();
+    }
+
+    @ApiOperation("测试接口2：测试能否正确获取已登陆对象的信息；测试通过")
+    @GetMapping("/test2")
+    public Integer getAuthentication1(Authentication authentication){
+        User user = (User) authentication.getPrincipal();
+        return user.getId();
+    }
+
+    @ApiOperation("测试接口3：测试能否正确获取已登陆对象的信息；测试通过")
+    @GetMapping("/test3")
+    public Integer getAuthentication2(@AuthenticationPrincipal User user){
+        return user.getId();
+    }
+```
+
+最后一种办法（应该是全部的方式）都要让实体类User实现`UserDetails`接口才能正常运作
+
+### 13.在项目中开启Mybatis打印sql语句的配置
+
+```yaml
+logging:
+  level:
+    com.kyriexu.mapper:
+      debug
+```
+
+```properties
+logging.level.com.kyriexu.mapper=debug
+```
+
