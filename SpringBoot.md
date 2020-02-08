@@ -2646,7 +2646,7 @@ public RespBean A(Integer[] array){
 
 如果请求的方式是`put`，那么如果在方法体内需要使用`servletRequest`的相关方法的时候，不能返回一个`RespBean`，只能单纯返回一个值....我也不知道为什么....
 
-### 8.Maven项目中如何读取Properties文件
+### 8.Maven项目中如何读取Properties文件以及resources文件夹下的文件
 
 #### 1. 通过ResourceUtils来读取
 
@@ -2666,12 +2666,29 @@ public RespBean A(Integer[] array){
 这样做的方法比较的快捷简便，这里的`in`也是上面的输入流，通过类加载器封装好的方法直接读取输入流
 
 ```java
- in = this.getClass().getClassLoader().getResourceAsStream("application.properties");
-            properties=new Properties();
-            assert in != null;
-            properties.load(in);
-            System.out.println(properties.toString());
-            in.close();
+ 		in = this.getClass().getClassLoader().getResourceAsStream("application.properties");
+        properties=new Properties();
+        assert in != null;
+        properties.load(in);
+        System.out.println(properties.toString());
+        in.close();
+```
+下面的是获取`resouces`文件夹下的文件的方法，得到`file`之后，就可以使用`FileReader`，或者`FileInputStream`，来进行`IO`
+```java
+URL url = Objects.requireNonNull(this.getClass().getClassLoader().getResource("Hello.txt"));
+File file=new File(url.getFile());
+```
+
+还有方式
+
+```java
+InputStream stream = this.getClass().getClassLoader().getResourceAsStream("Hello.txt");
+byte[] bytes = new byte[1024];
+BufferedInputStream inputStream = new BufferedInputStream(Objects.requireNonNull(stream));
+int len;
+while ((len = inputStream.read(bytes)) != -1) {
+	System.out.println(new String(bytes, 0, len));
+}
 ```
 
 
@@ -2895,5 +2912,64 @@ logging:
 
 ```properties
 logging.level.com.kyriexu.mapper=debug
+```
+
+### 14.前端传多个数组给后端的方式
+
+```java
+	@PostMapping("/testMultiParam")
+    public String recv(String[] ids,Integer status){
+        logger.info(String.valueOf(status));
+        StringBuilder sb = new StringBuilder();
+        for (String id : ids) {
+            sb.append(id);
+            logger.info(id);
+        }
+        return sb.toString();
+    }
+```
+
+上面这种方式的传参的方法是：
+
+![传参方法.png](https://i.loli.net/2020/01/25/OjP3SoKJGcTrV12.png)
+
+前端的ajax请求应该写成：
+
+```javascript
+data=ids=xxx&ids=xxx&status=xxx
+$.ajax({
+    type: 'delete',
+	contentType: "application/x-www-form-urlencoded",
+    data: data,
+    url: '/order/deleteCartItem',
+    success: function (rep) {
+        // do something
+ }
+})
+```
+
+### 15.SpringMVC的NativeWebRequest是什么
+
+ 抽象了各种request，如果要获得实际真正的request，则调用getNativeRequest()；或者getNativeRequest(XXX.class)； 
+
+```java
+HttpServletRequest req = webRequest.getNativeRequest(HttpServletRequest.class);
+HttpServletResponse resp = webRequest.getNativeResponse(HttpServletResponse.class);
+```
+
+### 16.springboot项目在使用@PropertiesSource以及@ConfigurationProperties出现的问题
+
+如果出现：
+
+![springboot 配置文件.png](https://i.loli.net/2020/01/25/OFghHSl3GczDP1r.png)
+
+则在项目中添加依赖
+
+```xml
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
 ```
 
