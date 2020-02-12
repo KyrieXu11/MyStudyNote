@@ -2042,7 +2042,93 @@ public class MyAcessDecisionManager implements AccessDecisionManager {
                     }
 ```
 
+### 14.CSRF攻击
 
+先来看下服务端没有禁用csrf的时候，postman怎么发送数据
+
+#### 1.配置SpringSecurity
+
+简单的说下下面的代码的作用吧：
+
+1. 因为要使用postman做测试，所以做一个简单的`httpbasic`认证，方便登陆。
+2. 配置了2个用户(其实这里只用一个用户就可测试了)
+3. 开启接口权限，认证之后就可以访问
+
+```java
+@EnableWebSecurity
+@Configuration
+public class CusSecurityConfig extends WebSecurityConfigurerAdapter {
+
+    @Bean
+    public PasswordEncoder passwordEncoder(){
+        return new BCryptPasswordEncoder(10);
+    }
+
+    @Override
+    protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+        PasswordEncoder passwordEncoder=passwordEncoder();
+        auth.inMemoryAuthentication()
+                .withUser("kyriexu").roles("admin").password(passwordEncoder.encode("123"))
+                .and()
+                .withUser("xu").roles("student").password(passwordEncoder.encode("123"));
+    }
+
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http.csrf()
+                .and()
+                .authorizeRequests()
+                .anyRequest().authenticated()
+                .and()
+                .httpBasic();
+    }
+}
+```
+
+#### 2.编写接口
+
+这里的接口是基础的四个接口，`get`、`post`、`put`、`delete`
+
+```java
+@RestController
+public class HelloController {
+
+    @GetMapping("/")
+    public String get(){
+        return "get";
+    }
+    @PostMapping("/")
+    public String post(){
+        return "post";
+    }
+    @PutMapping("/")
+    public String put(){
+        return "put";
+    }
+    @DeleteMapping("/")
+    public String delete(){
+        return "delete";
+    }
+}
+```
+
+#### 3.使用postman访问
+
+​	get请求是正常的通过的
+
+![csrf_get.png](https://i.loli.net/2020/02/12/vkcjZr3V4CAqlSR.png)
+
+post请求无法通过，因为开启了`csrf`防护
+
+![csrf_post_failed.png](https://i.loli.net/2020/02/12/DrsiSjmyqpx1GZF.png)
+
+那么要怎么才能在csrf防护开启的情况下，能够发送post请求呢？
+
+首先得给postman装上一个拦截器
+
+![csrf_postman_interceptor.png](https://i.loli.net/2020/02/12/7RXvrlDP1ZyScIf.png)
+
+然后使用get方式发送一次请求之后，查看`cookies`，里面会有一个**`XSRF-TOKEN`**的cookies，把这个加在post方式的头部，就可以发送成功了。但是因为我这里装拦截器的时候有点问题，装不上，所以就只能根据别人的视频来进行记录了。
 
 ## SpingBoot整合Redis
 
@@ -2972,4 +3058,3 @@ HttpServletResponse resp = webRequest.getNativeResponse(HttpServletResponse.clas
             <optional>true</optional>
         </dependency>
 ```
-
