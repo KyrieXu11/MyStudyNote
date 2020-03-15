@@ -557,8 +557,10 @@ public class MyMvcConfig extends WebMvcConfigurationSupport {
 
 
 
-# 前后端分离的学习
+## 9.高并发下时间戳的解决方案
 
-## 1.@Responsebody和@RestController的作用
+jdk8中提供了新的时间API，设置时区是东8区
 
-对`json`格式的数据的响应。
+```java
+Long timeStamp = LocalDateTime.now().toInstant(ZoneOffset.of("+8")).toEpochMilli();
+```
