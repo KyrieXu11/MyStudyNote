@@ -6,7 +6,7 @@
 
 ## list 的底层原理
 
-类似java的 LinkedList 但是不光全部是这个，而是一个 quicklist ,当元素比较少的时候，采用连续的存储结构存储元素，称之为压缩列表( ziplist )；当元素比较多的时候，才会改成 quicklist ，将多个 ziplist 使用双向链表串起来就是 quicklist .
+类似java的 LinkedList 但是不光全部是这个，而是一个 quicklist ,当元素比较少的时候，采用连续的存储结构存储元素，称之为压缩列表( ziplist )；当元素比较多的时候，才会改成 quicklist ，将多个 ziplist 使用双向链表串起来就是 quicklist.
 
 ## hash 的底层原理
 
