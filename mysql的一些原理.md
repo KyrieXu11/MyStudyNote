@@ -165,6 +165,16 @@ select * from t where id = 6 for update;
 
 ![UPcjRe.png](https://s1.ax1x.com/2020/07/06/UPcjRe.png)
 
+## 索引失效的几种情况
+
++ 有or必全有索引;
++ 复合索引未用左列字段;
++ like以%开头;
++ 需要类型转换;
++ where中索引列有运算;
++ where中索引列使用了函数;
++ 如果mysql觉得全表扫描更快时（数据少）;
+
 ## 事务
 
 ### 四大特性
