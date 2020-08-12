@@ -165,6 +165,18 @@ select * from t where id = 6 for update;
 
 ![UPcjRe.png](https://s1.ax1x.com/2020/07/06/UPcjRe.png)
 
+## Next key lock
+
+可参考[next-key lock](https://www.cnblogs.com/zhoujinyi/p/3435982.html)
+
+即行锁+间隙锁
+
+如果有一张表的范围是(-∞，1]，(1,5]，(5,8]，(8,11]，(11,+∞]，那么给8这一行加上一个行锁之后，无法插入 (5,11)之间的数据，但是5和11这两行的记录是可以插入的，即
+
+```sql
+select * from t where value = 8 for update;
+```
+
 ## 索引失效的几种情况
 
 + 有or必全有索引;
