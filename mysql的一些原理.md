@@ -294,3 +294,10 @@ MySQL默认的事务隔离级别是可重复读。
 事务D先更新了表，所以行的系统版本变成了事务D的事务版本
 
 而事务C由于更新，是写操作，按照之前的当前读当前写的规律，所以将k在事务D的基础上设置成了k=3，并且将该行的版本号改成了当前的事务版本，所以最后一个select语句是从当前的事务版本号的行读出来的数据，也就是k=3。
+
+# 日志系统
+
+## 盘点一下redolog
+
+当innodb进行一条更新的语句的时候，那么就会把记录先写在redolog里面，并且更新buffer pool，这个时候更新操作就完成了，innodb会在空闲的时候进行刷新到磁盘上，并且redolog写满了也会自动刷新到磁盘。有两个关键的指针，checkpoint和write_pos，checkpoint和write_pos之间表示的是redolog上还空余可写的部分，如果write_pos追上了checkpoint则表示写满了，要刷盘了，然后把checkpoint 给推进一下
+
