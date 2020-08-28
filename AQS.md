@@ -157,7 +157,7 @@ final boolean nonfairTryAcquire(int acquires) {
     // 获取锁计数器state的值
     int c = getState();
     if (c == 0) {
-        // 如果是0的话，就使用CAS来设置state的值
+        // 如果是0的话，就使用CAS来设置state的值，
         if (compareAndSetState(0, acquires)) {
             // 设置独占线程的是当前线程
             setExclusiveOwnerThread(current);
@@ -166,6 +166,7 @@ final boolean nonfairTryAcquire(int acquires) {
         }
     }
     // 如果state!=0但是当前的线程是独占的线程(抢到锁的线程)
+    // 可重入的原理
     else if (current == getExclusiveOwnerThread()) {
         // 将锁计数器设置为当前有堵塞线程的个数
         int nextc = c + acquires;
