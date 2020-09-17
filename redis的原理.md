@@ -32,7 +32,7 @@
 
 ## zset 的底层原理
 
-底层是跳跃列表。按照score排序
+底层是跳跃列表。按照score排序，如果score相同，则按照value排序
 
 ## hyperloglog 的底层原理
 
